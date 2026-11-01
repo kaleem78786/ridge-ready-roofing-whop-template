@@ -53,7 +53,7 @@ async function smoothScroll(targetY, durationMs = 1800) {
 // PART 1: LIVE SITE WALKTHROUGH & BRANDING (0:00 - 0:50)
 // ----------------------------------------------------------------------
 console.log('[0:00] Step 1: Navigating to live site via whop.app canonical redirect...');
-await page.goto('https://ridge-ready-roofing-kaleem.whop.app/', { waitUntil: 'networkidle' });
+await page.goto('https://ridge-ready-roofing-demo.whop.app/', { waitUntil: 'networkidle' });
 await page.waitForTimeout(4000);
 
 // Top banner & Hero showcase
@@ -171,7 +171,7 @@ if (await clearBtn.count()) {
 // PART 3: TEST CHECKOUT WITH WHOP PAYMENT ELEMENTS (1:55 - 2:45)
 // ----------------------------------------------------------------------
 console.log('[1:55] Step 3: Navigating to Sandbox Test Checkout (/sandbox)...');
-await page.goto('https://ridge-ready-roofing-kaleem.whop.site/sandbox', { waitUntil: 'networkidle' });
+await page.goto('https://ridge-ready-roofing-demo.whop.site/sandbox', { waitUntil: 'networkidle' });
 await page.waitForTimeout(3500);
 
 // Scroll down to services
@@ -218,14 +218,14 @@ if (await closeBtn.count()) {
 
 // Show verified payment confirmation page
 console.log('[2:35] Showing verified test checkout return status (paid deposit)...');
-await page.goto('https://ridge-ready-roofing-kaleem.whop.site/sandbox/checkout/return?job=633e5e8c-db07-41c9-9462-eef5ec9b8e65', { waitUntil: 'networkidle' });
+await page.goto('https://ridge-ready-roofing-demo.whop.site/sandbox/checkout/return?job=633e5e8c-db07-41c9-9462-eef5ec9b8e65', { waitUntil: 'networkidle' });
 await page.waitForTimeout(5000);
 
 // ----------------------------------------------------------------------
 // PART 4: OWNER OPERATIONS DESK & BALANCE SUMMARY (2:45 - 3:45)
 // ----------------------------------------------------------------------
 console.log('[2:45] Step 4: Navigating to Owner Operations Desk (/sandbox/operations)...');
-await page.goto('https://ridge-ready-roofing-kaleem.whop.site/sandbox/operations', { waitUntil: 'networkidle' });
+await page.goto('https://ridge-ready-roofing-demo.whop.site/sandbox/operations', { waitUntil: 'networkidle' });
 await page.waitForTimeout(3000);
 
 // Owner login

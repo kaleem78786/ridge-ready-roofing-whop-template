@@ -52,7 +52,7 @@ Store runtime configuration in the Whop app's Secrets settings. Whop injects the
 npm run deploy
 ```
 
-Live entry URL: [ridge-ready-roofing-kaleem.whop.app](https://ridge-ready-roofing-kaleem.whop.app/). Whop currently responds with HTTP **307** to the canonical [ridge-ready-roofing-kaleem.whop.site](https://ridge-ready-roofing-kaleem.whop.site/) website. Both are Whop-hosted; the `.app` URL is a redirecting entry address, and `.site` is the final browser address. Current [Whop Websites docs](https://docs.whop.com/developer/websites/quickstart) document `.site` hosting.
+Live entry URL: [ridge-ready-roofing-demo.whop.app](https://ridge-ready-roofing-demo.whop.app/). Whop currently responds with HTTP **307** to the canonical [ridge-ready-roofing-demo.whop.site](https://ridge-ready-roofing-demo.whop.site/) website. Both are Whop-hosted; the `.app` URL is a redirecting entry address, and `.site` is the final browser address. Current [Whop Websites docs](https://docs.whop.com/developer/websites/quickstart) document `.site` hosting.
 
 The three production plans have been created on the demo merchant: inspection `plan_JP8PFTIsCdE60` ($149), tune-up `plan_PKHpwaAoFXZtn` ($399), and deposit `plan_qh5BuIad8W2na` ($500). Production payment submission remains intentionally disabled; catalog creation and website deployment do not prove a successful test checkout.
 
@@ -74,8 +74,8 @@ Configure a signed webhook at `/api/webhooks/whop` for payment/setup events; uns
 
 The Website app uses public OAuth 2.1 with PKCE and `openid profile email`. Configure the app's `oauth_client_type` as `public` and register these exact callback URLs:
 
-- `https://ridge-ready-roofing-kaleem.whop.app/api/auth/whop/callback`
-- `https://ridge-ready-roofing-kaleem.whop.site/api/auth/whop/callback`
+- `https://ridge-ready-roofing-demo.whop.app/api/auth/whop/callback`
+- `https://ridge-ready-roofing-demo.whop.site/api/auth/whop/callback`
 
 For a rebranded deployment, register its actual HTTPS callback on the new app. The runtime provides `APP_ID`; local development can set `WHOP_APP_ID`.
 

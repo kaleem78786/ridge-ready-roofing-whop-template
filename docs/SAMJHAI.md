@@ -1,8 +1,8 @@
 # Website ka istemal — Roman Urdu
 
-Live website: https://ridge-ready-roofing-kaleem.whop.site/
+Live website: https://ridge-ready-roofing-demo.whop.site/
 
-Whop `.app` entry: https://ridge-ready-roofing-kaleem.whop.app/ — yeh HTTP 307 se isi `.site` address par le jata hai. Final browser address `.site` hota hai.
+Whop `.app` entry: https://ridge-ready-roofing-demo.whop.app/ — yeh HTTP 307 se isi `.site` address par le jata hai. Final browser address `.site` hota hai.
 
 ## Abhi kya verify hua hai?
 
@@ -33,7 +33,7 @@ Alag test checkout ke liye live website ka `/sandbox` address kholein; test depo
 
 ## Owner portal aur final invoice
 
-Portal: https://ridge-ready-roofing-kaleem.whop.site/operations
+Portal: https://ridge-ready-roofing-demo.whop.site/operations
 
 Owner password se sign-in karein. Yahan estimate requests aur project deposits Whop account se read hote hain. Koi deposit paid na ho to final invoice ke liye select nahi hoga.
 
