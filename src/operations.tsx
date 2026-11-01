@@ -3,7 +3,8 @@ import { ArrowLeft, ArrowUpRight, CheckCircle2, LockKeyhole, RefreshCw } from 'l
 import { api, type PixelEvent } from './lib';
 import { company } from './config';
 
-type Config = { ready: boolean; environment: string; missing: string[]; plans: Record<string, string> };
+type Config = { ready: boolean; environment: string; accountId: string; missing: string[]; plans: Record<string, string> };
+type InvoiceRow = { id: string; number: string; status: string; amount: string | number; projectTotal: number; depositCredit: number; jobId: string; paymentUrl: string | null };
 type Job = { id: string; jobId: string; service?: string; status: string; email?: string; createdAt: string; amount: string | number; cardSaved: boolean };
 type Lead = { id: string; createdAt: string; name: string; email: string; phone: string; address: string; zip: string; service: string; message: string; contactConsent: boolean };
 type ReceivedEvent = { id: string; eventId: string; name: string; time: string; path: string };
@@ -27,6 +28,11 @@ export function Operations() {
   const [authenticated, setAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
+  const [invoiceError, setInvoiceError] = useState('');
+  const [invoicesLoading, setInvoicesLoading] = useState(true);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [notice, setNotice] = useState('');
   const [hasMore, setHasMore] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [leadsHasMore, setLeadsHasMore] = useState(false);
@@ -51,7 +57,7 @@ export function Operations() {
   }
   async function refresh() {
     setBusy('refresh'); setError('');
-    try { await Promise.all([loadJobs(), loadLeads(), loadReceivedEvents()]); } catch (error) { setError(errorMessage(error)); }
+    try { await Promise.all([loadJobs(), loadLeads(), loadReceivedEvents(), loadInvoices()]); } catch (error) { setError(errorMessage(error)); }
     finally { setBusy(''); }
   }
   async function loadLeads() {
@@ -59,17 +65,31 @@ export function Operations() {
     setLeads(data.leads); setLeadsHasMore(data.hasMore); setAuthenticated(true);
   }
   async function loadReceivedEvents() {
+    setEventsLoading(true);
     try {
       const data = await api<{ events: ReceivedEvent[]; hasMore: boolean }>('admin/events');
       setReceivedEvents(data.events); setEventsHasMore(data.hasMore); setEventsError('');
     } catch (error) { setEventsError(errorMessage(error)); }
+    finally { setEventsLoading(false); }
+  }
+  async function loadInvoices() {
+    setInvoicesLoading(true);
+    try { const data = await api<{ invoices: InvoiceRow[] }>('admin/invoices'); setInvoices(data.invoices); setInvoiceError(''); }
+    catch (error) { setInvoiceError(errorMessage(error)); }
+    finally { setInvoicesLoading(false); }
+  }
+  async function emailInvoice(id: string) {
+    setBusy('send'); setNotice(''); setError('');
+    try { await api(`admin/invoices/${id}/send`, {}); setNotice('Whop accepted the invoice send request. Check delivery and payment status in Whop.'); await loadInvoices(); }
+    catch (error) { setError(errorMessage(error)); }
+    finally { setBusy(''); }
   }
   async function refreshReceivedEvents() {
     setBusy('events'); await loadReceivedEvents(); setBusy('');
   }
   useEffect(() => {
     api<Config>('config').then(setConfig).catch(error => setConfigError(errorMessage(error)));
-    Promise.all([loadJobs(), loadLeads(), loadReceivedEvents()]).catch(() => { /* An absent owner session displays the login form. */ });
+    Promise.all([loadJobs(), loadLeads(), loadReceivedEvents(), loadInvoices()]).catch(() => { /* An absent owner session displays the login form. */ });
     const update = () => setEvents([...(window.__roofingEvents || [])]);
     window.addEventListener('roofing:pixel', update);
     return () => window.removeEventListener('roofing:pixel', update);
@@ -78,14 +98,14 @@ export function Operations() {
     event.preventDefault(); setBusy('login'); setError('');
     try {
       await api('admin/login', { password });
-      setPassword(''); setAuthenticated(true); await Promise.all([loadJobs(), loadLeads(), loadReceivedEvents()]);
+      setPassword(''); setAuthenticated(true); await Promise.all([loadJobs(), loadLeads(), loadReceivedEvents(), loadInvoices()]);
     } catch (error) { setError(errorMessage(error)); }
     finally { setBusy(''); }
   }
   async function logout() {
     setBusy('logout'); setError('');
     try {
-      await api('admin/logout', {}); setAuthenticated(false); setJobs([]); setLeads([]); setReceivedEvents([]); setResult(null); setPaymentId('');
+      await api('admin/logout', {}); setAuthenticated(false); setJobs([]); setInvoices([]); setLeads([]); setReceivedEvents([]); setResult(null); setPaymentId('');
     } catch (error) { setError(errorMessage(error)); }
     finally { setBusy(''); }
   }
@@ -98,11 +118,12 @@ export function Operations() {
       });
       if (!data.invoice?.id || !data.invoice.status) throw new Error('Whop did not return a verified invoice. Check the owner account before retrying.');
       setResult(data);
+      await loadInvoices();
     } catch (error) { setError(errorMessage(error)); }
     finally { setBusy(''); }
   }
   const selected = jobs.find(job => job.id === paymentId);
-  const paidJobs = jobs.filter(job => job.status === 'paid' && (!job.service || job.service === 'deposit'));
+  const paidJobs = jobs.filter(job => job.status === 'paid' && job.service === 'deposit' && !!job.jobId);
   const balance = selected && total ? Number(total) - Number(selected.amount) : null;
   const paymentUrl = verifiedUrl(result?.paymentUrl);
   const totalCollected = jobs.reduce((sum, job) => sum + (job.status === 'paid' ? Number(job.amount) : 0), 0);
@@ -112,7 +133,9 @@ export function Operations() {
     <a className="text-link" href="/"><ArrowLeft size={16} /> Back to {company.name}</a>
     <h1>Project & payment desk</h1>
     <p>Review estimate requests and deposits, then bill the remaining balance after the work is complete.</p>
+    {config && <p><span className="badge">{config.environment === 'sandbox' ? 'SANDBOX — test records only' : 'PRODUCTION'}</span> Account: <code>{config.accountId}</code></p>}
     {error && <p className="error" role="alert">{error}</p>}
+    {notice && <p role="status">{notice}</p>}
     {!authenticated ? <section className="portal-panel">
       <h2><LockKeyhole size={20} /> Owner sign in</h2>
       <p>Use the owner password configured for this website.</p>
@@ -155,19 +178,24 @@ export function Operations() {
         <p>Enter the full agreed project total. The server subtracts the verified deposit and creates one final invoice per project.</p>
         <form onSubmit={createInvoice}>
           <label>Paid project deposit<select aria-label="Paid project deposit" required value={paymentId} onChange={event => { setPaymentId(event.target.value); setResult(null); setMode('manual'); setCustomerAuthorized(false); }}><option value="" disabled>Select a paid deposit</option>{paidJobs.map(job => <option key={job.id} value={job.id}>{job.email || job.jobId} — {dollars(job.amount)}</option>)}</select></label>
-          <label>Full project total (USD)<input type="number" inputMode="decimal" required min="501" max="100000" step="0.01" placeholder="8500.00" value={total} onChange={event => { setTotal(event.target.value); setResult(null); }} /></label>
+          <label>Full project total in dollars (USD)<input type="number" inputMode="decimal" required min={selected ? (Number(selected.amount) + 0.01).toFixed(2) : '0.01'} max="100000" step="0.01" placeholder="8500.00" value={total} onChange={event => { setTotal(event.target.value); setResult(null); }} /></label>
           {balance !== null && <p>Estimated final balance: <strong>{dollars(balance)}</strong>. Whop calculates the final deposit credit; tax adjustments may apply.</p>}
           <label>Payment collection<select aria-label="Payment collection" value={mode} onChange={event => { setMode(event.target.value as 'manual' | 'auto'); setCustomerAuthorized(false); setResult(null); }}><option value="manual">Manual — create a Whop payment link</option><option value="auto" disabled={!selected?.cardSaved}>Auto-charge the saved method</option></select></label>
           <label className="consent"><input type="checkbox" required checked={jobCompleted} onChange={event => setJobCompleted(event.target.checked)} />I confirm this job is completed and the project total matches the agreed scope.</label>
           {mode === 'auto' && <label className="consent"><input type="checkbox" required checked={customerAuthorized} onChange={event => setCustomerAuthorized(event.target.checked)} />I confirm the homeowner explicitly authorized charging this final balance to the saved payment method.</label>}
           <button className="button dark" disabled={!!busy || !paidJobs.length || !config?.ready || !jobCompleted || (mode === 'auto' && !customerAuthorized)}>{busy === 'invoice' ? 'Submitting to Whop…' : mode === 'auto' ? 'Create & charge final balance' : 'Create final invoice'} <ArrowUpRight size={17} /></button>
         </form>
-        {result && <div className="checkout-status" role="status">{result.issuanceError || result.invoice.status === 'draft' ? <LockKeyhole size={22} /> : <CheckCircle2 size={22} />}<p><strong>{result.issuanceError ? 'Draft saved — business verification required before issue/payment.' : result.invoice.status === 'draft' ? 'Invoice draft saved. It has not been issued.' : result.reused ? 'Existing final invoice retrieved.' : 'Final invoice issued in Whop.'}</strong><br />Invoice: <code>{result.invoice.id}</code><br />Status: <strong>{result.invoice.status}</strong>{result.invoice.amount_due && <><br />Amount due: {dollars(result.invoice.amount_due.amount)}</>}{result.invoice.scheduled_charge_at && <><br />Scheduled charge: {new Date(result.invoice.scheduled_charge_at).toLocaleString()}</>}</p>{result.issuanceError && <p className="error">{result.issuanceError.message}<br /><code>{result.issuanceError.code}</code></p>}{paymentUrl ? <a className="text-link" href={paymentUrl} target="_blank" rel="noopener noreferrer">Open Whop payment link <ArrowUpRight size={16} /></a> : <p>No payable link was returned for this invoice status. Review the invoice in the Whop dashboard.</p>}<p>Creating or issuing an invoice does not by itself confirm payment. Check its status in Whop before closing the project.</p></div>}
+        {result && <div className="checkout-status" role="status">{result.issuanceError || result.invoice.status === 'draft' ? <LockKeyhole size={22} /> : <CheckCircle2 size={22} />}<p><strong>{result.issuanceError ? 'Draft saved — business verification required before issue/payment.' : result.invoice.status === 'draft' ? 'Invoice draft saved. It has not been issued.' : result.reused ? 'Existing final invoice retrieved.' : 'Final invoice issued in Whop.'}</strong><br />Invoice: <code>{result.invoice.id}</code><br />Status: <strong>{result.invoice.status}</strong>{result.invoice.amount_due && <><br />Amount due: {dollars(result.invoice.amount_due.amount)}</>}{result.invoice.scheduled_charge_at && <><br />Scheduled charge: {new Date(result.invoice.scheduled_charge_at).toLocaleString()}</>}</p>{result.issuanceError && <p className="error">{result.issuanceError.message}<br /><code>{result.issuanceError.code}</code><br/><a className="text-link" href={`${config?.environment === 'sandbox' ? 'https://sandbox.whop.com' : 'https://whop.com'}/dashboard/${config?.accountId}/balance/?verify=true`} target="_blank" rel="noopener noreferrer">Open Whop account verification ↗</a></p>}{paymentUrl ? <a className="text-link" href={paymentUrl} target="_blank" rel="noopener noreferrer">Open Whop payment link <ArrowUpRight size={16} /></a> : <p>No payable link was returned for this invoice status. Review the invoice in the Whop dashboard.</p>}<p>Creating or issuing an invoice does not by itself confirm payment. Check its status in Whop before closing the project.</p></div>}
+      </section>
+      <section className="portal-panel">
+        <div className="portal-actions"><h2>Final invoices</h2><button className="text-link" onClick={loadInvoices} disabled={!!busy}><RefreshCw size={14}/>Refresh invoices</button></div>
+        <p>Saved in Whop and available after you reload this page. Drafts have not been issued or charged. Emailing is a separate action.</p>
+        {invoicesLoading ? <p role="status">Loading invoices from Whop…</p> : invoiceError ? <p className="error" role="alert">{invoiceError}</p> : invoices.length ? <table><thead><tr><th>Invoice</th><th>Project / deposit credit</th><th>Balance due</th><th>Status</th><th>Actions</th></tr></thead><tbody>{invoices.map(invoice => <tr key={invoice.id}><td><strong>{invoice.number || invoice.id}</strong><br/><code>{invoice.id}</code></td><td>{dollars(invoice.projectTotal)} total<br/>{dollars(invoice.depositCredit)} credit</td><td>{dollars(invoice.amount)}</td><td>{invoice.status}</td><td>{verifiedUrl(invoice.paymentUrl) && <a className="text-link" href={verifiedUrl(invoice.paymentUrl)!} target="_blank" rel="noopener noreferrer">Pay invoice ↗</a>}{invoice.status === 'open' && <button className="button outline small" disabled={!!busy} onClick={()=>emailInvoice(invoice.id)}>Email through Whop</button>}{invoice.status === 'draft' && <small>Awaiting issue; review verification message above.</small>}</td></tr>)}</tbody></table> : <p>No final invoices have been created by this template yet.</p>}
       </section>
       <section className="portal-panel">
         <div className="portal-actions"><h2>Custom events received by Whop</h2><button className="text-link" onClick={refreshReceivedEvents} disabled={!!busy}><RefreshCw size={14} />{busy === 'events' ? 'Refreshing…' : 'Refresh received events'}</button></div>
-        <p>Read directly from the production account's Whop Events API for the last 24 hours. These are server records, separate from the browser call log below. New events may take about a minute to appear.</p>
-        {eventsError ? <p className="error" role="alert">{eventsError}</p> : <>
+        <p>Read directly from the connected account's Whop Events API for the last 24 hours. These are server records, separate from the browser call log below. New events may take about a minute to appear.</p>
+        {eventsLoading ? <p role="status">Loading received events from Whop…</p> : eventsError ? <p className="error" role="alert">{eventsError}</p> : <>
           <div className="portal-actions">{['estimate_requested', 'service_viewed', 'deposit_started'].map(name => <span className="badge" key={name}>{name}: {receivedEvents.some(event => event.name === name) ? 'Received' : 'Not received in this period'}</span>)}</div>
           {receivedEvents.length ? <table><thead><tr><th scope="col">Custom event</th><th scope="col">Received event time</th><th scope="col">Page</th><th scope="col">Whop event reference</th></tr></thead><tbody>{receivedEvents.map(event => <tr key={event.id}><td><strong>{event.name}</strong></td><td>{new Date(event.time).toLocaleString()}</td><td>{event.path || 'Not recorded'}</td><td><code>{event.eventId || event.id}</code></td></tr>)}</tbody></table> : <p>No matching custom events were returned by Whop for this period.</p>}
           {eventsHasMore && <p>Showing the latest 100 matching events. Use Whop's dashboard for older records.</p>}

@@ -166,7 +166,7 @@ test('final invoice subtracts deposit once, requires owner + completion, and reu
     assert.equal(writes.length, 3); assert.equal(writes[0].body.initial_price, 8000);
     assert.deepEqual(writes[0].body.payment_method_configuration, { enabled: [], disabled: ['paypal'], include_platform_defaults: true });
     assert.equal(writes[1].body.items[0].variant_id, 'plan_balance'); assert.equal(writes[1].body.payment_method_id, undefined); assert.equal(writes[1].body.metadata.deposit_credit_cents, '50000');
-    assert.deepEqual(writes.map(w => w.headers.get('Idempotency-Key')), ['roof-job1-final-price-800000', 'roof-job1-final', 'roof-job1-issue']);
+    assert.deepEqual(writes.map(w => w.headers.get('Idempotency-Key')), ['roof-job1-final-price-800000', 'roof-job1-final-v2', 'roof-job1-issue']);
     assert.ok(writes.every(w => w.headers.get('Api-Version-Date') === '2026-10-29-8'));
     assert.equal((await r.json() as any).paymentUrl, 'https://sandbox.whop.com/checkout/pay_final/?token=signedtoken');
     globalThis.fetch = async url => String(url).includes('/payments/') ? response({ id: 'pay_deposit', account_id: 'biz_test', metadata: { template: 'ridgeway-roofing-v1', service: 'deposit', job_id: 'job1' }, status: 'paid', member_id: 'mber_homeowner', currency: 'usd', line_items: [{ variant_id: 'plan_deposit' }], total: { amount: '500.00' } }) : response({ data: [{ id: 'pay_final', metadata: { template: 'ridgeway-roofing-v1', deposit_payment_id: 'pay_deposit' }, status: 'open' }], page_info: {} });
@@ -251,7 +251,7 @@ test('concurrent final requests use identical idempotency keys, so upstream crea
     const input = { paymentId: 'pay_race', totalDollars: 8500, mode: 'manual', jobCompleted: true };
     const responses = await Promise.all([req('/admin/invoices', input, auth), req('/admin/invoices', input, auth)]);
     assert.ok(responses.every(r => r.status === 201)); assert.equal(uniqueWrites.size, 3);
-    assert.deepEqual([...uniqueWrites.keys()], ['roof-raceJob-final-price-800000', 'roof-raceJob-final', 'roof-raceJob-issue']);
+    assert.deepEqual([...uniqueWrites.keys()], ['roof-raceJob-final-price-800000', 'roof-raceJob-final-v2', 'roof-raceJob-issue']);
   } finally { globalThis.fetch = original; }
 });
 test('anonymous estimates request Whop sign-in and never fall back to the account owner', async () => {
@@ -315,4 +315,22 @@ test('lead validation detail stays in redacted server logs and is not exposed pu
     assert.equal(logs.join(' ').includes('home@example.com'), false); assert.equal(logs.join(' ').includes('sensitive_token_value'), false);
     assert.equal(publicBody.includes('user_id is required'), false); assert.equal(publicBody.includes('home@example.com'), false);
   } finally { globalThis.fetch = originalFetch; console.error = originalError; }
+});
+
+test('sandbox user-not-found never replaces the customer with the merchant owner', async () => {
+  const identity = await visitorCookie(); const original = globalThis.fetch; let calls = 0;
+  globalThis.fetch = async url => { calls++; assert.equal(new URL(String(url)).pathname, '/api/v1/leads'); return response({ error: { code: 'user_not_found' } }, 404); };
+  try {
+    const r = await req('/leads', { name: 'Homeowner', email: 'home@example.com', phone: '+1 512 555 0100', address: '10 Test Street', zip: '78701', service: 'inspection', consent: true, requestId: crypto.randomUUID() }, identity);
+    assert.equal(r.status, 404); assert.equal(calls, 1);
+  } finally { globalThis.fetch = original; }
+});
+test('a sandbox visitor session cannot submit a production lead or cross-account lead', async () => {
+  const identity = await visitorCookie(); const original = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('Cross-environment identity must fail before upstream'); };
+  const input = { name: 'Homeowner', email: 'home@example.com', phone: '+1 512 555 0100', address: '10 Test Street', zip: '78701', service: 'inspection', consent: true, requestId: crypto.randomUUID() };
+  try {
+    assert.equal((await req('/leads', input, identity, { env: { WHOP_ENVIRONMENT: 'production' } })).status, 401);
+    assert.equal((await req('/leads', input, identity, { env: { WHOP_ACCOUNT_ID: 'biz_other' } })).status, 401);
+  } finally { globalThis.fetch = original; }
 });

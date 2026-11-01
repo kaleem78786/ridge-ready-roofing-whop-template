@@ -1,0 +1,83 @@
+{
+  "checkedAt": "2026-11-01T07:03:18.791Z",
+  "liveEntry": "https://ridge-ready-roofing-demo.whop.app/",
+  "canonical": "https://ridge-ready-roofing-demo.whop.site/",
+  "ownerEmail": "mystudentlife78.6@gmail.com",
+  "lead": {
+    "id": "lead_j338YR4AWBJqx",
+    "httpStatus": 201,
+    "verifiedAccount": "biz_6a79XwK95z7vPY"
+  },
+  "deposit": {
+    "environment": "sandbox",
+    "accountId": "biz_6a79XwK95z7vPY",
+    "jobId": "0f288cfb-d3de-4f13-a803-8070be2037f5",
+    "setup": {
+      "id": "sint_D2S0S2vjYEpm9",
+      "status": "succeeded"
+    },
+    "payment": {
+      "id": "pay_g8OjsjL0UOXnSb",
+      "status": "paid",
+      "amount": "500.00"
+    }
+  },
+  "invoice": {
+    "httpStatus": 201,
+    "invoice": {
+      "id": "pay_GtW3MnTe5QibMf",
+      "number": "#00000002",
+      "status": "draft",
+      "amount_due": {
+        "currency": "usd",
+        "amount": "8000.00",
+        "decimals": 2,
+        "display_decimals": 2
+      },
+      "metadata": {
+        "job_id": "0f288cfb-d3de-4f13-a803-8070be2037f5",
+        "template": "ridgeway-roofing-v1",
+        "billing_mode": "manual",
+        "job_completed": "true",
+        "deposit_payment_id": "pay_g8OjsjL0UOXnSb",
+        "project_total_cents": "850000",
+        "deposit_credit_cents": "50000",
+        "owner_attests_customer_approved_charge": "false"
+      }
+    },
+    "paymentLinkAvailable": false,
+    "issuanceError": {
+      "code": "invoice_account_verification_required",
+      "message": "Complete business verification in Whop before issuing this draft or collecting payment. No final balance was charged."
+    }
+  },
+  "pixels": {
+    "accountId": "biz_7G24bZs7UfiGOX",
+    "received": {
+      "estimate_requested": 1,
+      "service_viewed": 48,
+      "deposit_started": 4
+    }
+  },
+  "webhook": {
+    "environment": "sandbox",
+    "simulatedEvent": "setup_intent.succeeded",
+    "httpStatus": 200,
+    "deliveryStatus": 200,
+    "success": true,
+    "body": "{\"received\":true}"
+  },
+  "tests": {
+    "passed": 33,
+    "failed": 0
+  },
+  "mobile": {
+    "width": 390,
+    "horizontalOverflow": false
+  },
+  "remaining": [
+    "Whop merchant verification required before native invoice issue/payment",
+    "No final-balance charge or delivered invoice email verified",
+    "No replacement recording produced in this repair"
+  ]
+}

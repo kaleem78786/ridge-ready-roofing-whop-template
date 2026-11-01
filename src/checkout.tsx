@@ -18,6 +18,12 @@ export function CheckoutDialog({service,config,onClose}:{service:ServiceId;confi
 }
 function PaymentFlow({order,config}:{order:any;config:any}){
  const whop=useWhop();const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [result,setResult]=useState<any>(null);const [method,setMethod]=useState<'wallet'|'standard'|null>(null);
+ const polls=useRef(0);
+ useEffect(()=>{
+  if(!result?.payment||paid(result.payment.status)||!['open','pending','processing'].includes(result.payment.status)||polls.current>=30)return;
+  let active=true;const timer=setTimeout(async()=>{polls.current++;try{const next=await api('checkout/status');if(active)setResult(next);}catch(e){if(active)setError((e as Error).message);}},2000);
+  return()=>{active=false;clearTimeout(timer);};
+ },[result]);
  const returnUrl=`${window.location.origin}${(location.pathname === '/sandbox' || location.pathname.startsWith('/sandbox/'))?'/sandbox':''}/checkout/return?job=${order.jobId}`;
  async function finishPayment(p:any){
    if(!paid(p.status)&&p.client_secret&&whop){const next=await whop.payments.handleNextAction({clientSecret:p.client_secret});if(next.redirected)return;if(next.status!=='succeeded'&&next.status!=='processing')throw new Error(next.lastPaymentError?.message||'The payment step was not completed. Please try again.');}
@@ -38,10 +44,10 @@ function PaymentFlow({order,config}:{order:any;config:any}){
  <p className="checkout-note">{order.mode==='setup'?`First, securely save your payment method. Then pay your ${money(order.amount)} deposit. No final balance is charged now.`:'Choose an available payment method. Financing options appear when supported for this purchase.'}</p>
  {!method&&<div className="checkout-fields" style={{marginTop:20}}><button className="button dark" onClick={()=>setMethod('standard')}>Card & available financing<ArrowRight size={16}/></button><button className="button outline" onClick={()=>setMethod('wallet')}>Apple Pay / Google Pay<ArrowRight size={16}/></button></div>}
  {method==='wallet'&&<><Checkout {...(order.expressConfigId?{checkoutConfiguration:order.expressConfigId}:{plan:order.planId})} returnUrl={returnUrl} metadata={{template:'ridgeway-roofing-v1',job_id:order.jobId,service:order.service}} onComplete={expressComplete}>
-  <ExpressCheckoutElement layout="horizontal" wallets={['apple_pay','google_pay']}/>
- </Checkout><p className="checkout-note" style={{marginTop:16}}>Your device's supported wallets appear above. If none are available, close this checkout and choose card payment.</p></>}
+  <ExpressCheckoutElement layout="horizontal" wallets={['apple_pay','google_pay']}/><BrandingElement/>
+ </Checkout><p className="checkout-note" style={{marginTop:16}}>Your device's supported wallets appear above.</p><button className="button outline small" disabled={busy} onClick={()=>setMethod('standard')}>Use card payment instead</button></>}
  {method==='standard'&&<><div className="checkout-divider">SECURE PAYMENT DETAILS</div>
- <Payments accountId={config.accountId} plan={order.planId} returnUrl={returnUrl}>
+ <Payments accountId={config.accountId} {...(order.mode==='setup'?{mode:'setup' as const,currency:'usd',setupFutureUsage:'off_session' as const,paymentMethodConfiguration:{disabled:['paypal'],include_platform_defaults:true}}:{plan:order.planId})} returnUrl={returnUrl}>
   <PaymentFields mode={order.mode} amount={order.amount} onCreated={afterCreate} busy={busy} setBusy={setBusy} onError={setError}/>
  </Payments></>}
  </div>{error&&<p className="error" role="alert" style={{marginTop:15}}>{error}</p>}<p className="checkout-note" style={{marginTop:18}}><LockKeyhole size={12} style={{verticalAlign:'middle'}}/> Payment details stay inside Whop's secure hosted fields. Wallet availability depends on your device and merchant configuration.</p></>;

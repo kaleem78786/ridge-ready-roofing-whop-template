@@ -1,125 +1,85 @@
-# Roofing website on Whop
+# Ridge & Ready — Whop roofing template
 
-Original reusable React website with a Hono API Worker, packaged by the official Whop CLI Vite plugin. Customer pages include services, service area, financing, clearly labeled sample reviews, contact, and estimate requests. The owner desk is `/operations`.
+Original React website and Hono API Worker deployed with the official Whop Websites CLI. Company identity, service areas, reviews, service scope and prices live in `src/config.ts`.
 
-## Run locally
+- Live: https://ridge-ready-roofing-demo.whop.app/ (Whop redirects to https://ridge-ready-roofing-demo.whop.site/).
+- Customer site: `/`; owner desk: `/operations`.
+- Current deployment is a **sandbox demo**. No real payments are enabled.
+- Account owner: `mystudentlife78.6@gmail.com`, verified for production CLI and the separate sandbox account.
 
-Requires Node 22.18 or newer (native TypeScript support), or a current Node 24/26 release.
+## Verified on this account
+
+| Flow | Actual result |
+| --- | --- |
+| Estimate | Whop lead `lead_j338YR4AWBJqx`; HTTP 201 and account read-back |
+| Card on file | Setup `sint_D2S0S2vjYEpm9`, status `succeeded` |
+| Project deposit | Payment `pay_g8OjsjL0UOXnSb`, status `paid`, $500 USD |
+| Final balance | Native invoice `pay_GtW3MnTe5QibMf`, #00000002, $8,000 due, **draft** |
+| Custom pixels | All three names read back from Whop Events API |
+| Checks | 33 automated tests; TypeScript check; desktop/mobile live checks |
+
+**Remaining external gate:** Whop refuses invoice issuance with `invoice_account_verification_required`. The $8,000 draft exists, but it has no payable link until the merchant completes verification. No final-balance charge or delivered invoice email is claimed. The portal shows the exact state and a Whop verification link. See [Whop invoice issue errors](https://docs.whop.com/developer/guides/invoices).
+
+Evidence from this account is under `output/current-qa/` in the workspace. Old `output/evidence/` records concern earlier accounts and must not be represented as current proof. The existing older recording is not proof of the repaired flow; no replacement video was made during this repair.
+
+## Local development
+
+Requires Node 22.18+ with native TypeScript support.
 
 ```sh
 npm ci
 cp .env.example .dev.vars
+# Configure private server values in .dev.vars.
 npm run dev
-```
-
-Fill `.dev.vars` with your own server-side Whop credentials, account/catalog IDs, random session secret, and owner password. Empty configuration deliberately prevents checkout. Never put an API key into a `VITE_*` variable, browser code, the source archive, or Git.
-
-```sh
 npm test
 npm run typecheck
 npm run build
+npm run deploy
 ```
 
-The API tests use Node's native TypeScript support and test doubles. They check server validation and authorization; they do not prove live Whop checkout or account ingestion. Roman Urdu walkthrough: [docs/SAMJHAI.md](docs/SAMJHAI.md).
+Use Whop app Secrets for the hosted configuration. Local `.dev.vars` changes do not update live Secrets. Never commit or archive keys, owner passwords, session cookies or `.dev.vars`. The source ZIP excludes these files, browser profiles, dependencies and old recordings.
 
-The build produces `dist/client`, `dist/server/index.js`, and `dist/whop-build.zip`. Deployment must use `whop apps deploy`, rather than uploading to another host.
+The production Website app is `app_2pVNKJGaLGEh5u`, account `biz_7G24bZs7UfiGOX`. Sandbox resources belong to `biz_6a79XwK95z7vPY`. Both are owned through the email above; their resources and user IDs remain separate.
 
-## Rebrand and provision plans
+## Plans and rebranding
 
-Edit `src/config.ts` to change the company identity, contact details, service areas, services, prices, and reviews without changing page structure. Replace the demo phone/email, sample reviews, and business policies before pitching a real merchant as a live business. The provisioning script imports this same configuration for product names, scope, and default prices; optional pricing environment variables override those defaults.
-
-The three one-time USD services are inspection ($149), project deposit ($500), and flat-rate roof tune-up ($399). Using a Whop account API key with the needed catalog permissions, run:
+Edit `src/config.ts`, replace demo contact details and illustrative reviews, then provision the selected account:
 
 ```sh
 node --env-file=.dev.vars scripts/provision.mjs
 ```
 
-The script creates/reuses actual products and plans in the chosen environment. It prints non-secret plan IDs and prices for your environment configuration. It does not make a payment or send an invoice. Sandbox resources cannot be substituted for production resources. A signed-in production CLI can provision without copying its credentials:
+| Service | USD | Current sandbox plan |
+| --- | --- | --- |
+| Roof inspection | 149 | `plan_o72QNZ5P7Xg4g` |
+| Project deposit | 500 | `plan_hCRsVDrj5kiT5` |
+| Roof tune-up | 399 | `plan_Gqdt0QUySSgv8` |
 
-```sh
-WHOP_ENVIRONMENT=production WHOP_ACCOUNT_ID=biz_YOUR_ACCOUNT node scripts/provision.mjs --cli --output /tmp/roofing-plans.json
-```
+The separate production plans are `plan_S99ZW6IxA7UGc`, `plan_SDa0PRrQYAEdX`, and `plan_0fyMZ80svu3g2`, respectively. Never interchange sandbox and production plans. The provisioning script is idempotent and excludes PayPal.
 
-Catalog creates use stable idempotency keys; existing matching products/plans are reused. Every variant disables PayPal and retains Whop's default eligible payment methods.
+## Customer and owner workflow
 
-## Whop hosting
+1. A customer completes the estimate form and signs in with Whop. The draft survives sign-in and submits afterward. Confirmation requires an actual Whop `lead_` response. The form makes no charge and does not claim an email was sent.
+2. Sandbox-only demos need a **sandbox OAuth app**, not the production Website app ID. Set `WHOP_OAUTH_APP_ID`, `WHOP_OAUTH_ORIGIN=https://sandbox-api.whop.com` and `WHOP_OAUTH_AUTHORIZE_HOST=https://sandbox-api.whop.com`; register the exact hosted `/api/auth/whop/callback` URI on that public OAuth app. This deployment uses `app_d7ZibNnSkufUwV`.
+3. The server binds the verified visitor identity to the account and environment. A missing sandbox user never falls back to the merchant owner. In production, leave the OAuth overrides empty and use the production Website app.
+4. The customer approves the written project estimate before a deposit. Whop `PaymentElement`, `EmailElement` and required `BrandingElement` collect details. Deposit Elements use `mode="setup"` and `setupFutureUsage="off_session"`; the verified setup is then used for the deposit payment. No custom card form exists.
+5. The alternative wallet surface uses `ExpressCheckoutElement` and `BrandingElement`. Apple/Google Pay require an eligible device and merchant. Actual wallet payment was not tested. Whop decides financing availability.
+6. Payment status comes from Whop, with automatic pending-status refresh. A return URL or client success callback cannot mark a job paid.
+7. Owner signs in at `/operations`, selects a paid deposit with a project reference, enters the **full project price in dollars**, and confirms completion. $8,500 total less $500 paid produces an $8,000 final invoice. Whop stores the invoice; history survives reloads. Existing invoices are reused.
+8. Manual collection provides a Whop link after issue. The owner can explicitly email an open invoice through Whop. Auto-charge requires a saved method and separate owner attestation of the customer's authorization for that final amount. Account verification still applies.
 
-Install/sign in with the [official CLI](https://whop.sh), then select the intended merchant business. This repository is already scaffolded. Use `whop apps create --help` to register a **website** for this code, then `whop apps deploy --app app_YOUR_ID` to let the CLI link and deploy the project. Do not fabricate an app ID or handwrite `whop.app.json`. To start a separate fresh website instead, use the documented `whop apps init --app_type website --name "Your company" --domain your-company` workflow.
+`/sandbox` and `/sandbox/operations` provide isolated sandbox checkout routes for a later production configuration. In this sandbox-only demo, the main site already uses sandbox. When the main environment is production, estimate/sign-in routes remain production even when visiting `/sandbox`; only test payment routes switch accounts.
 
-Store runtime configuration in the Whop app's Secrets settings. Whop injects the production account ID and API origin; server-side API requests can use the platform authentication proxy. Sandbox testing requires its separate sandbox key. `WHOP_ENVIRONMENT` defaults to `sandbox`. Production payments additionally require `WHOP_ENABLE_LIVE_PAYMENTS=true`.
+## Tracking, webhooks and security
 
-```sh
-npm run deploy
-```
+`whop.track` sends `service_viewed`, `deposit_started` and `estimate_requested`. The estimate event follows a successful real lead. A server mirror uses the same lead/event ID for deduplication. `WHOP_PIXEL_ACCOUNT_ID` selects the hosted Website's production analytics account during sandbox-payment demos; sandbox user IDs are excluded from that cross-environment analytics mirror. Customer contact details and property addresses are not copied into custom events.
 
-Live entry URL: [ridge-ready-roofing-demo.whop.app](https://ridge-ready-roofing-demo.whop.app/). Whop currently responds with HTTP **307** to the canonical [ridge-ready-roofing-demo.whop.site](https://ridge-ready-roofing-demo.whop.site/) website. Both are Whop-hosted; the `.app` URL is a redirecting entry address, and `.site` is the final browser address. Current [Whop Websites docs](https://docs.whop.com/developer/websites/quickstart) document `.site` hosting.
+The owner desk reads actual Whop Events API records separately from its browser-call log. “Sent” means a client call, while “Received” means an account read-back. Whop handles automatic page views and checkout tracking on its hosting.
 
-The three production plans have been created on the demo merchant: inspection `plan_JP8PFTIsCdE60` ($149), tune-up `plan_PKHpwaAoFXZtn` ($399), and deposit `plan_qh5BuIad8W2na` ($500). Production payment submission remains intentionally disabled; catalog creation and website deployment do not prove a successful test checkout.
+Webhook endpoints verify signatures with `@whop/sdk/helpers`: `/api/webhooks/whop` and isolated `/api/sandbox/webhooks/whop`. Each needs its account's actual signing secret. Sessions are signed, HttpOnly and time limited; OAuth uses PKCE, state and nonce. Mutations enforce same-origin requests. Final billing verifies account ownership, paid status, refunds, project identity and recorded deposit credit.
 
-## Deposit → job → final invoice
+## Implemented Whop features
 
-1. The customer accepts the written project scope and starts a deposit. Whop Payment Elements collect the payment details; custom card fields are never used.
-2. A Whop setup intent saves the method. The server verifies its success before charging the $500 deposit. The customer sees paid status only after a server read of the Whop payment.
-3. Whop is the durable payment/job record. `/operations` reads deposits after owner authentication. A browser return URL cannot mark a project paid.
-4. After completing the work, the owner selects a paid deposit, enters the full agreed project price, and confirms completion. For an $8,500 project with a $500 credit, the final balance is $8,000 before applicable adjustments.
-5. Manual collection creates/issues a Whop invoice and provides its verified payment URL. Auto collection uses the stored method only after the owner's explicit attestation that the homeowner authorized that charge. Stored-card setup alone is not final-charge authorization.
+This reusable roofing template uses Whop Websites hosting, three one-time plans, Payment Elements with express checkout and required branding, authenticated estimate capture through the Leads API, setup-intent card storage followed by a project deposit, and native final-balance invoices with manual payment or authorized stored-method charging. Its owner portal reads leads, deposits, persistent invoice history and ingested custom pixel events directly from Whop. It also verifies signed webhooks and keeps sandbox identities, plans and payment credentials separate from production. Invoice issuance remains gated by this merchant's Whop verification.
 
-The server verifies deposit ownership, template/plan, paid status, and refunds. It credits the recorded deposit and reuses an existing non-void final invoice. Issued, pending, and scheduled invoices are not reported as paid. Sending an invoice email is a separate action; creating a manual link does not silently send email.
-
-The estimate form calls `POST /api/leads`; success requires a `lead_` ID from Whop. Whop's Leads API associates each lead with a Whop user, so a homeowner signs in with Whop before sending the request. The server uses that authenticated visitor's `user_id`; it never substitutes the merchant owner. Customer contact/scope details are stored in lead metadata. An unsigned visitor receives `401 whop_sign_in_required`, not a fabricated lead confirmation.
-
-Configure a signed webhook at `/api/webhooks/whop` for payment/setup events; unsigned payloads are rejected. The owner portal always rereads Whop records.
-
-## Whop visitor sign-in
-
-The Website app uses public OAuth 2.1 with PKCE and `openid profile email`. Configure the app's `oauth_client_type` as `public` and register these exact callback URLs:
-
-- `https://ridge-ready-roofing-demo.whop.app/api/auth/whop/callback`
-- `https://ridge-ready-roofing-demo.whop.site/api/auth/whop/callback`
-
-For a rebranded deployment, register its actual HTTPS callback on the new app. The runtime provides `APP_ID`; local development can set `WHOP_APP_ID`.
-
-`GET /api/auth/whop/start` redirects to Whop with a cryptographic state, nonce, and PKCE challenge. The HttpOnly, SameSite=Lax state cookie permits the cross-site callback. `/api/auth/whop/callback` verifies state, exchanges the code, and verifies the visitor through Whop's `/oauth/userinfo` endpoint. Only the resulting identity is kept in a signed HttpOnly cookie; access and refresh credentials are not exposed to browser JavaScript or persisted. `GET /api/auth/whop` reports sign-in status. The frontend preserves the estimate while sign-in completes. See [Whop OAuth](https://docs.whop.com/developer/guides/oauth).
-
-Whop lead validation failures are logged server-side with credentials, email addresses, and long tokens redacted; the public API returns a generic error and code.
-
-## Payment Elements and sandbox limits
-
-Checkout uses Whop Elements, including express checkout and required Whop branding. Apple Pay/Google Pay depend on the browser, wallet, domain registration, and merchant eligibility. Financing is shown by Whop when supported for the merchant and purchase; the website does not promise approval or a specific payment method.
-
-The [official sandbox guide](https://docs.whop.com/developer/guides/sandbox) currently says Elements sandbox access is not generally available, and sandbox supports cards only. A merchant/account with working Elements sandbox access is therefore required to prove the requested test checkout. Merely rendering the components, passing a build, or testing API mocks does not satisfy that acceptance gate.
-
-The separate sandbox merchant/key has now been configured and an actual Elements deposit has succeeded in this account: setup intent `sint_Dx975DLXA9YFe` is `succeeded`, and payment `pay_vN9iPax6TSuwYR` is `paid` for $500 USD. Evidence is in `output/evidence/sandbox-paid-proof.json` and its screenshot. This observed result is account-specific despite the documented general sandbox limitation. Production payment submission stays disabled. Use the documented sandbox success card `4242 4242 4242 4242`, future expiry such as `12/34`, and a three-digit CVC only against sandbox. Additional card-saving documentation: [Save payment methods](https://docs.whop.com/developer/guides/save-payment-methods).
-
-Final invoice `pay_Q1vPbV8pMfxMwG` has been read back from Whop sandbox as **draft**, with $8,000 due: $8,500 agreed project total minus the $500 recorded deposit. Issuing this invoice is currently blocked by merchant verification; no issued/payment-link or final payment success is claimed. See `output/evidence/final-invoice-readback.json`.
-
-The live `/sandbox` route uses a separate test checkout and `/sandbox/operations` uses its test deposits/invoices. Configure all `WHOP_SANDBOX_*` account, API-key and plan settings from `.env.example`; missing dedicated values stop checkout instead of falling back to production credentials or plans. Sandbox job cookies are separate from production job cookies. Estimate requests, visitor sign-in and owner sign-in still use the production endpoints, so a sandbox site visit does not silently change where customer leads are stored. Sandbox webhooks use `/api/sandbox/webhooks/whop` with their dedicated signing secret.
-
-`tests/sandbox-isolation.test.mts` checks credential/catalog separation, secret-free public configuration, same-origin enforcement after route rewriting, browser endpoint selection and separate job cookies. These are local security checks; they do not establish that Whop accepted a test payment.
-
-## Tracking and proof
-
-`src/lib.ts` calls `whop.track` with unique event IDs for `service_viewed`, `deposit_started`, and `estimate_requested`. The estimate event fires only after the lead API returns success. Whop supplies automatic page-view and checkout tracking on its supported hosted domains.
-
-After a successful lead creation, the server also mirrors that actual `estimate_requested` conversion to Whop's Events API using the same lead ID as the browser event and a stable idempotency key. This follows Whop's documented browser/server deduplication flow. It carries the validated `_wuid` cookie, verified Whop visitor ID, original IP/user agent, and a same-origin page URL with tracking parameters; contact details and property addresses are not copied into analytics. Failed lead creation never creates an analytics conversion, and an analytics refusal cannot change a successfully saved lead into a failed form submission. The server credential needs `event:create`. See [server-side Events API](https://docs.whop.com/developer/ads/events-api).
-
-The owner desk shows configuration readiness and the client pixel-call log. “Sent” means the pixel function was invoked, not that ingestion has been independently verified. Confirm all three custom names in Whop's pixel dashboard, allowing about a minute for reporting. See [Whop tracking](https://docs.whop.com/developer/websites/tracking).
-
-## Submission verification
-
-Do not mark these complete without live evidence:
-
-- An actual required Whop-hosted URL and responsive desktop/mobile review.
-- A successful sandbox Elements checkout showing express checkout and BrandingElement.
-- A saved-method setup intent and paid deposit verified through Whop.
-- An estimate submission and corresponding lead visible on the merchant account.
-- A final-balance invoice read back from Whop, with correct deposit credit.
-- All three custom pixel events visible in Whop reporting.
-- A 3–5 minute real screen recording covering the live site, successful test checkout, lead, invoice, and pixel events.
-- A source ZIP or GitHub repository without credentials.
-
-The website and production catalog are live. An estimate has been verified with HTTP 201 and Whop lead `lead_UxoivbblhJKpq`; the owner portal reads template leads back from Whop. The sandbox saved-method setup and $500 deposit are verified, and an $8,000 final invoice exists as a draft. Invoice issuance, all-three pixel ingestion, and the complete recording remain outstanding. A local preview or recording of blocked screens is not the requested end-to-end submission.
-
-## Feature paragraph
-
-This roofing template integrates Whop Websites deployment, three one-time service plans, Whop Payment Elements with express checkout and required branding, estimate capture through the Leads API, setup-intent card storage for project deposits, and an authenticated owner workflow for final-balance invoices with manual collection or authorized stored-method charging. It also includes signed webhook verification and custom `estimate_requested`, `service_viewed`, and `deposit_started` pixel calls, with reusable company/service configuration and responsive layouts. Merchant eligibility and completed live testing determine the available payment methods and verified submission status.
+Roman Urdu instructions: [docs/SAMJHAI.md](docs/SAMJHAI.md).

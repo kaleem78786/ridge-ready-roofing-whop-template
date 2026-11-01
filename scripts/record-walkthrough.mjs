@@ -232,7 +232,7 @@ await page.waitForTimeout(3000);
 console.log('[2:55] Owner signing in with secure credential...');
 const pwdInput = page.locator('input[type="password"]');
 if (await pwdInput.count() && await pwdInput.isVisible()) {
-  await pwdInput.fill('s1ZucUcuVm00LwfhLZY8aHItIYCVaO7V');
+  await pwdInput.fill(process.env.ADMIN_PASSWORD || '');
   await page.waitForTimeout(1500);
   await page.getByRole('button', { name: 'Sign in securely' }).click();
   await page.waitForTimeout(3500);

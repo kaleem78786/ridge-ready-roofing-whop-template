@@ -1,83 +1,38 @@
-# Website ka istemal — Roman Urdu
+# Istemal — Roman Urdu
 
-Live website: https://ridge-ready-roofing-demo.whop.site/
+Website: https://ridge-ready-roofing-demo.whop.app/ . Whop isay `.whop.site` par redirect karta hai.
+Owner portal: https://ridge-ready-roofing-demo.whop.site/operations
 
-Whop `.app` entry: https://ridge-ready-roofing-demo.whop.app/ — yeh HTTP 307 se isi `.site` address par le jata hai. Final browser address `.site` hota hai.
+Ab website ka main flow **sandbox** hai. Production CLI aur sandbox merchant dono `mystudentlife78.6@gmail.com` ke hain. Sandbox mein asli paison ki charge nahi hoti.
 
-## Abhi kya verify hua hai?
+## Customer ka flow
 
-Website Whop par deploy hai. Teen asli production plans ban chuke hain: inspection **$149**, roof tune-up **$399**, project deposit **$500**. Plan IDs `README.md` mein hain.
+1. **Request an estimate** par naam, email, phone, property address, ZIP aur service dein. Contact consent accept karein.
+2. Whop sign-in poora karein. Ab sandbox user ko sandbox account se hi connect kiya jata hai. Form login ke baad khud submit hota hai.
+3. Asli Whop lead banne par **Request received** confirmation milti hai. Form submit karne ki koi fee nahi. Yeh screen email bhejne ka claim nahi karti.
+4. Inspection $149, tune-up $399, replacement ka deposit $500 hai. $500 poori roof ki qeemat nahi; pehle written scope approve karna zaroori hai.
+5. Deposit mein pehle Whop card save karta hai, phir $500 charge karta hai. Card details sirf Whop ke hosted fields mein jati hain. Test card `4242 4242 4242 4242`, future expiry aur 3-digit CVC **sirf sandbox** mein use karein.
+6. Payment ka final status Whop se verify hota hai. Processing ho to screen khud dobara check karti hai.
 
-Estimate request Whop par **201** response ke saath lead `lead_UxoivbblhJKpq` bana chuki hai. Owner portal mein account se leads dobara parhi jati hain. Is se pata chalta hai ke request sirf browser mein save nahi hui.
+Is account par setup `sint_D2S0S2vjYEpm9` succeeded aur payment `pay_g8OjsjL0UOXnSb` $500 paid verify hain. Lead `lead_j338YR4AWBJqx` bhi account se read-back hua hai.
 
-**Production mein asli payment submit karna abhi disabled hai.** Alag sandbox mein Payment Elements se setup intent `sint_Dx975DLXA9YFe` ka status **succeeded** aur $500 deposit `pay_vN9iPax6TSuwYR` ka status **paid** Whop se verify ho chuka hai. Yeh test payment hai, asli paison ki charge nahi.
+## Owner invoice kaise banaye?
 
-$8,500 project total se $500 credit ghata kar **$8,000 draft invoice** `pay_Q1vPbV8pMfxMwG` bhi Whop par bana hai. Invoice abhi **draft** hai; issue/payment-link step merchant verification par ruka hua hai. Issued ya paid kehna abhi theek nahi. Pixel ke teeno events ki ingestion aur final recording bhi mukammal verify honi hain.
+1. `/operations` par owner password se login karein. Private password `.dev.vars` / Whop app Secrets mein hai; chat ya recording mein na dikhayein.
+2. **Paid project deposit** mein relevant $500 deposit select karein.
+3. **Full project total in dollars** mein poora agreed amount likhein. Misal: `8500` ka matlab $8,500 hai; cents enter nahi karne.
+4. Job complete hone ka checkbox confirm karein. Manual mode mein final invoice banayein. $8,500 − $500 = **$8,000**.
+5. Invoice Whop mein save hota hai aur **Final invoices** history mein reload ke baad bhi milta hai. Dobara submit karne par existing invoice reuse hota hai.
+6. Issued/open invoice par payment link aur **Email through Whop** action milta hai. Auto-charge ke liye saved method ke saath homeowner ki alag authorization chahiye.
 
-## Customer estimate kaise bheje?
+**Abhi ek account blocker hai:** invoice `pay_GtW3MnTe5QibMf`, #00000002, $8,000 ka draft bana hai. Whop usay issue karne par `invoice_account_verification_required` deta hai. Portal ka **Open Whop account verification** link use karein. Merchant verification complete hone se pehle payable link ya final charge nahi ban sakta. Draft ko paid samajhna ghalat hoga.
 
-1. Website par **Request an Estimate** kholein.
-2. Apna naam, email, phone, property address, ZIP aur required service likhein. Contact consent parhein aur accept karein.
-3. Whop sign-in karein. Whop Leads API ko request karne wale customer ki identity chahiye; website business owner ki identity us ki jagah istemal nahi karti.
-4. Sign-in ke baad form submit karein. Kamyabi tab dikhai jati hai jab Whop asal `lead_` ID wapas deta hai. Error aaye to request ko bheja hua na samjhein.
+Account ka pehle se mojood $84,500 draft alag purana record hai. Usay is naye $8,000 test invoice se confuse na karein; repair ke dauran us purane invoice ko charge ya modify nahi kiya gaya.
 
-## Inspection, tune-up aur project deposit
+## Pixel aur template
 
-Inspection aur tune-up ek martaba pay hone wali services hain. Replacement ka **$500 sirf deposit** hai; poori roof replacement ki qeemat nahi. Final scope aur poora project total pehle written agreement mein tay hoga.
+Whop Events API mein `estimate_requested`, `service_viewed` aur `deposit_started` teeno read-back verify hue hain. Owner portal mein **Received** actual account record hai; browser log ka **sent** sirf function call batata hai.
 
-Deposit flow mein Whop Payment Elements card details leta hai, **setup intent** se method save hota hai, phir deposit charge hota hai. Website ka apna card form nahi hai. Apple Pay, Google Pay aur financing ka dikhna merchant eligibility, browser aur Whop par depend karta hai.
+`src/config.ts` se company name, contact, service areas, services, prices aur reviews badal sakte hain. Naye merchant ke liye us ke apne plans, keys aur OAuth app configure karein. Demo reviews ko asli reviews ke baghair verified na kahein.
 
-Is demo mein live payments disabled hone ki wajah se checkout rukna expected hai. Sandbox mein test cards sirf sandbox checkout ke andar use karein; production par test card na dein.
-
-Alag test checkout ke liye live website ka `/sandbox` address kholein; test deposits aur invoices `/sandbox/operations` mein milte hain. Yeh alag sandbox account, key aur plans istemal karta hai. In ki settings missing hon to production par wapas nahi jata, checkout rok deta hai. Test job cookie bhi alag hai. Estimate form aur Whop sign-in production par rehte hain, is liye test page se bheja gaya estimate bhi roofing business ke asal Leads account mein jata hai.
-
-## Owner portal aur final invoice
-
-Portal: https://ridge-ready-roofing-demo.whop.site/operations
-
-Owner password se sign-in karein. Yahan estimate requests aur project deposits Whop account se read hote hain. Koi deposit paid na ho to final invoice ke liye select nahi hoga.
-
-Kaam mukammal hone ke baad paid deposit select karein, **poora agreed project total** likhein aur completion confirm karein. Misal: total **$8,500**, deposit credit **$500**, final balance **$8,000**; applicable tax adjustments alag ho sakti hain. Server recorded deposit dobara verify karke credit calculate karta hai.
-
-- **Manual:** Whop invoice aur payment link banega. Link customer ko diya ja sakta hai; invoice banana khud se email bhejna nahi hai.
-- **Auto-charge:** saved method charge karne ke liye customer ki explicit authorization confirm karni hogi. Card save hone ka matlab har future charge ki ijazat nahi.
-
-Invoice ka `open`, `pending` ya scheduled hona paid hona nahi hai. Payment status Whop se confirm karne ke baad hi project paid mark karein. Dobara submit karne par existing final invoice reuse karne ki protection hai.
-
-## Password aur keys kahan hain?
-
-`.dev.vars` is machine ki private local configuration hai; source ZIP/Git mein shamil nahi honi chahiye. Is mein API key aur local `ADMIN_PASSWORD` ho sakte hain. In values ko screen recording, screenshot ya chat mein na dikhayein.
-
-Live website **Whop app Secrets** wala `ADMIN_PASSWORD` use karti hai. Local `.dev.vars` edit karne se live password ya live environment khud nahi badalta. Password kam az kam 16 characters aur `APP_SESSION_SECRET` kam az kam 32 random characters ho.
-
-## Nayi roofing company ke liye template kaise badlein?
-
-`src/config.ts` mein company name, phone/email, city, service areas, services aur prices edit karein. Demo phone/email ko asli contact se replace karein. Sample reviews ko sirf asli permission wali reviews se replace karein; demo label tabhi hatayein jab tamam claims haqeeqi hon.
-
-Service IDs `inspection`, `repair`, `deposit` integration ko jorti hain. Naam aur pricing config se badal sakti hai; IDs badalne ke liye API mapping bhi badalni hogi. Provisioning script isi config se catalog banati hai. Naye merchant ke Whop account par plans provision karein aur us ke plan IDs/runtime settings set karein. Purane merchant ki keys ya plan IDs reuse na karein.
-
-Local development ke liye Node **22.18+** chahiye:
-
-```sh
-npm ci
-test -f .dev.vars || cp .env.example .dev.vars
-npm run dev
-```
-
-Checks:
-
-```sh
-npm test
-npm run typecheck
-npm run build
-```
-
-Live update official Whop CLI se deploy hota hai: `npm run deploy`. Local preview ko live deployment na samjhein. `WHOP_ENABLE_LIVE_PAYMENTS=true` production mein real charges enable karta hai; demo testing ke liye isay enable na karein.
-
-## Pixel events aur final submission
-
-`service_viewed` service dekhne par, `deposit_started` deposit checkout shuru karne par, aur `estimate_requested` successful lead banne ke baad fire hote hain. Portal ka **sent** label pixel function call batata hai. Asal ingestion Whop pixel dashboard mein verify hoti hai; reporting mein takreeban ek minute lag sakta hai.
-
-Successful estimate ka event server bhi Whop Events API ko usi lead ID ke saath bhejta hai. Whop browser aur server ki same conversion ko deduplicate karta hai. Lead fail ho to conversion nahi banti; analytics fail ho to saved lead ko failed request nahi dikhaya jata. Is reporting mein contact details ya property address copy nahi hota.
-
-Final 3–5 minute recording mein live website, successful sandbox checkout with Whop branding, created lead, final-balance invoice aur Whop mein pixel events dikhane hain. Jab tak yeh payment/invoice gates pass nahi hote, poori end-to-end submission complete kehna theek nahi.
+Reference video ka customer/owner workflow dekh kar identity, card-saving, pending status aur invoice history ke maslay fix kiye hain. Is repair mein nayi screen recording nahi banayi gayi.

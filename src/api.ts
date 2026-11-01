@@ -2,11 +2,11 @@ import { Hono, type Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { z } from 'zod';
 import { unwrapWebhook } from '@whop/sdk/helpers';
-import { ApiError, configuration, safePayment, services, setting, TEMPLATE_ID, whop, type Bindings, type Service } from './whop.ts';
+import { ApiError, configuration, safePayment, services, setting, TEMPLATE_ID, whop, whopPlatform, type Bindings, type Service } from './whop.ts';
 
 type App = { Bindings: Bindings };
 type Job = { id: string; service: Service; exp: number; setupId?: string; paymentId?: string };
-type Visitor = { userId: string; name?: string; email?: string; exp: number };
+type Visitor = { userId: string; name?: string; email?: string; environment: string; accountId: string; exp: number };
 type OAuthState = { verifier: string; state: string; nonce: string; redirectUri: string; exp: number };
 const api = new Hono<App>();
 const limits = new Map<string, { n: number; until: number }>();
@@ -50,6 +50,21 @@ function jobCookie(c: Context<App>) { return setting(c.env, 'ROOFING_SANDBOX_ROU
 async function job(c: Context<App>) { return unseal<Job>(c, jobCookie(c)); }
 async function saveJob(c: Context<App>, value: Job) { await cookie(c, jobCookie(c), value, 86400 * 7); }
 async function admin(c: Context<App>) { await unseal(c, 'roof_admin'); }
+async function visitor(c: Context<App>) {
+  const identity = await unseal<Visitor>(c, 'roof_visitor');
+  const cfg = configuration(c.env);
+  if (identity.environment !== cfg.environment || identity.accountId !== cfg.accountId) throw new ApiError(401, 'Sign in again for this payment environment.');
+  return identity;
+}
+function oauthApp(c: Context<App>) {
+  return setting(c.env, 'WHOP_OAUTH_APP_ID') || setting(c.env, 'APP_ID') || setting(c.env, 'WHOP_APP_ID');
+}
+function analytics(c: Context<App>) {
+  const hostedAccount = setting(c.env, 'WHOP_PIXEL_ACCOUNT_ID');
+  return /^biz_[a-zA-Z0-9]+$/.test(hostedAccount)
+    ? { accountId: hostedAccount, request: whopPlatform }
+    : { accountId: configuration(c.env).accountId, request: whop };
+}
 async function json(c: Context<App>) {
   if (!c.req.header('Content-Type')?.includes('application/json')) throw new ApiError(415, 'Send JSON.');
   if (Number(c.req.header('Content-Length') || 0) > 16384) throw new ApiError(413, 'Request too large.');
@@ -60,6 +75,7 @@ async function json(c: Context<App>) {
 function returnUrl(c: Context<App>, j: Job) { return `${new URL(c.req.url).origin}${setting(c.env, 'ROOFING_SANDBOX_ROUTE') === 'true' ? '/sandbox' : ''}/checkout/return?job=${encodeURIComponent(j.id)}`; }
 function meta(j: Job) { return { template: TEMPLATE_ID, job_id: j.id, service: j.service }; }
 function mirrorEstimate(c: Context<App>, lead: { id: string; created_at?: string }, visitor: Visitor) {
+  const target = analytics(c);
   const origin = new URL(c.req.url).origin;
   let page = new URL('/', origin);
   try {
@@ -75,11 +91,11 @@ function mirrorEstimate(c: Context<App>, lead: { id: string; created_at?: string
   const userAgent = c.req.header('User-Agent')?.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 512);
   const createdAt = lead.created_at ? Date.parse(lead.created_at) : NaN;
   const now = Date.now();
-  return whop(c.env, 'POST', '/events', {
-    account_id: configuration(c.env).accountId, event_name: 'estimate_requested', event_id: lead.id,
+  return target.request(c.env, 'POST', '/events', {
+    account_id: target.accountId, event_name: 'estimate_requested', event_id: lead.id,
     event_time: new Date(Number.isFinite(createdAt) && createdAt <= now && createdAt >= now - 28 * 86400000 ? createdAt : now).toISOString(),
     action_source: 'website', url: page.href,
-    user: { user_id: visitor.userId, ...(anonymousId ? { anonymous_id: anonymousId } : {}) },
+    user: { ...(target.request === whopPlatform && configuration(c.env).environment === 'sandbox' ? {} : { user_id: visitor.userId }), ...(anonymousId ? { anonymous_id: anonymousId } : {}) },
     context: { ...(ip && (z.ipv4().safeParse(ip).success || z.ipv6().safeParse(ip).success) ? { ip_address: ip } : {}), ...(userAgent ? { user_agent: userAgent } : {}) },
     ...(setting(c.env, 'APP_ID') ? { app_id: setting(c.env, 'APP_ID') } : {}),
     ...(setting(c.env, 'BUILD_ID') ? { app_build_id: setting(c.env, 'BUILD_ID') } : {}),
@@ -98,6 +114,7 @@ function verifyDeposit(c: Context<App>, p: any) {
   const cfg = configuration(c.env);
   if (p.account_id !== cfg.accountId || p.metadata?.template !== TEMPLATE_ID || p.metadata?.service !== 'deposit' || p.status !== 'paid' || !p.member_id || p.currency !== 'usd' || !p.line_items?.some((i: any) => i.variant_id === cfg.plans.deposit)) throw new ApiError(409, 'A verified paid project deposit is required.');
   if (Number(p.refunded_amount?.amount || 0) > 0) throw new ApiError(409, 'Refunded deposits require manual reconciliation.');
+  if (typeof p.metadata?.job_id !== 'string' || !p.metadata.job_id) throw new ApiError(409, 'This deposit has no project reference. Reconcile it in Whop before invoicing.');
   const paid = Number(p.total?.amount);
   if (!Number.isFinite(paid) || paid <= 0) throw new ApiError(409, 'The recorded deposit amount is unavailable.');
 }
@@ -139,12 +156,12 @@ api.onError((error, c) => {
 });
 api.get('/api/config', c => c.json(configuration(c.env)));
 api.get('/api/auth/whop', async c => {
-  try { const visitor = await unseal<Visitor>(c, 'roof_visitor'); return c.json({ authenticated: true, user: { name: visitor.name, email: visitor.email } }); }
+  try { const identity = await visitor(c); return c.json({ authenticated: true, user: { name: identity.name, email: identity.email } }); }
   catch { return c.json({ authenticated: false }); }
 });
 api.get('/api/auth/whop/start', async c => {
   rate(c, 'oauth', 10);
-  const appId = setting(c.env, 'APP_ID') || setting(c.env, 'WHOP_APP_ID');
+  const appId = oauthApp(c);
   if (!/^app_[a-zA-Z0-9]+$/.test(appId)) throw new ApiError(503, 'Whop sign-in is awaiting the Website app connection.');
   const verifier = base64(crypto.getRandomValues(new Uint8Array(32)));
   const state = base64(crypto.getRandomValues(new Uint8Array(24)));
@@ -168,7 +185,7 @@ api.get('/api/auth/whop/callback', async c => {
     return c.redirect('/?whop_login=failed#estimate', 302);
   }
   const code = z.string().min(1).max(3000).parse(c.req.query('code'));
-  const appId = setting(c.env, 'APP_ID') || setting(c.env, 'WHOP_APP_ID');
+  const appId = oauthApp(c);
   const origin = setting(c.env, 'WHOP_OAUTH_ORIGIN') || (configuration(c.env).environment === 'sandbox' ? 'https://sandbox-api.whop.com' : 'https://api.whop.com');
   const tokenResponse = await fetch(`${origin}/oauth/token`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'x-whop-inject-key': 'none' },
@@ -183,7 +200,8 @@ api.get('/api/auth/whop/callback', async c => {
   const profile = await profileResponse.json() as any;
   if (!/^user_[a-zA-Z0-9]+$/.test(profile.sub)) throw new ApiError(502, 'Whop returned an invalid visitor identity.');
   const maxAge = Math.max(60, Math.min(Number(tokens.expires_in) || 3600, 3600));
-  await cookie(c, 'roof_visitor', { userId: profile.sub, name: typeof profile.name === 'string' ? profile.name.slice(0, 100) : undefined, email: typeof profile.email === 'string' ? profile.email.slice(0, 254) : undefined, exp: Date.now() + maxAge * 1000 }, maxAge);
+  const cfg = configuration(c.env);
+  await cookie(c, 'roof_visitor', { userId: profile.sub, name: typeof profile.name === 'string' ? profile.name.slice(0, 100) : undefined, email: typeof profile.email === 'string' ? profile.email.slice(0, 254) : undefined, environment: cfg.environment, accountId: cfg.accountId, exp: Date.now() + maxAge * 1000 }, maxAge);
   // Only identity is needed for leads. Discard access tokens and revoke the
   // unused refresh token; no visitor credential is stored or exposed to JS.
   if (typeof tokens.refresh_token === 'string') {
@@ -198,35 +216,19 @@ api.post('/api/leads', async c => {
   if (input.website) throw new ApiError(400, 'Unable to accept this request.');
   const { accountId } = configuration(c.env);
   if (!/^biz_/.test(accountId)) throw new ApiError(503, 'Estimate requests are awaiting the Whop account connection.', 'whop_not_configured');
-  let visitor: Visitor;
-  try { visitor = await unseal<Visitor>(c, 'roof_visitor'); }
+  let identity: Visitor;
+  try { identity = await visitor(c); }
   catch { throw new ApiError(401, 'Sign in with Whop to send your estimate request to the roofing team.', 'whop_sign_in_required'); }
-  let result;
-  try {
-    result = await whop(c.env, 'POST', '/leads', {
+  const result = await whop(c.env, 'POST', '/leads', {
       account_id: accountId,
-      user_id: visitor.userId,
+      user_id: identity.userId,
       referrer: `${new URL(c.req.url).origin}/`,
-      metadata: { template: TEMPLATE_ID, request_id: input.requestId, name: input.name, email: input.email, phone: input.phone, address: input.address, zip: input.zip, service: input.service, message: input.message, contact_consent: true, consent_at: new Date().toISOString() },
+      metadata: { template: TEMPLATE_ID, request_id: input.requestId, name: input.name, email: input.email, phone: input.phone, address: input.address, zip: input.zip, service: input.service, message: input.message, contact_consent: true, consent_at: new Date().toISOString(), visitor_user_id: identity.userId, visitor_environment: configuration(c.env).environment },
     }, `estimate-${input.requestId}`);
-  } catch (err: any) {
-    if (configuration(c.env).environment === 'sandbox' && (err?.code === 'whop_404' || err?.code === 'user_not_found' || err?.status === 404)) {
-      const acct = await whop(c.env, 'GET', `/accounts/${accountId}`);
-      const fallbackUserId = acct?.owner?.id || 'user_fgrdO2JrPIozs';
-      result = await whop(c.env, 'POST', '/leads', {
-        account_id: accountId,
-        user_id: fallbackUserId,
-        referrer: `${new URL(c.req.url).origin}/`,
-        metadata: { template: TEMPLATE_ID, request_id: input.requestId, name: input.name, email: input.email, phone: input.phone, address: input.address, zip: input.zip, service: input.service, message: input.message, contact_consent: true, consent_at: new Date().toISOString(), visitor_user_id: visitor.userId },
-      }, `estimate-${input.requestId}`);
-    } else {
-      throw err;
-    }
-  }
   if (!result.id?.startsWith('lead_')) throw new ApiError(502, 'Whop did not return a lead confirmation.');
   // Same event name/ID as browser whop.track: Whop deduplicates the actual conversion.
   // Complete this bounded, failure-tolerant delivery before the hosted request ends.
-  await mirrorEstimate(c, result, visitor);
+  await mirrorEstimate(c, result, identity);
   return c.json({ id: result.id }, 201);
 });
 api.post('/api/checkout/start', async c => {
@@ -298,12 +300,12 @@ api.post('/api/admin/login', async c => {
 api.post('/api/admin/logout', c => { deleteCookie(c, 'roof_admin', { path: '/api' }); return c.json({ authenticated: false }); });
 api.get('/api/admin/events', async c => {
   await admin(c);
-  const { accountId } = configuration(c.env);
+  const { accountId, request } = analytics(c);
   if (!/^biz_[a-zA-Z0-9]+$/.test(accountId)) throw new ApiError(503, 'The Whop business account is not configured.');
   const names = ['estimate_requested', 'service_viewed', 'deposit_started'];
   const now = Date.now();
   const params = new URLSearchParams({ account_id: accountId, from: new Date(now - 86400000).toISOString(), to: new Date(now).toISOString(), first: '100', direction: 'desc', event: names.map(name => `pixel.custom:${name}`).join(',') });
-  const result = await whop(c.env, 'GET', `/events?${params}`);
+  const result = await request(c.env, 'GET', `/events?${params}`);
   if (!Array.isArray(result.data)) throw new ApiError(502, 'Whop did not return an event list.');
   const string = (value: unknown, max = 200) => typeof value === 'string' ? value.slice(0, max) : '';
   const path = (value: unknown) => {
@@ -338,6 +340,17 @@ api.get('/api/admin/jobs', async c => {
   const params = new URLSearchParams({ account_id: cfg.accountId, first: '100', order: 'created_at', direction: 'desc' });
   const result = await whop(c.env, 'GET', `/payments?${params}`);
   return c.json({ jobs: result.data.filter((p: any) => p.metadata?.template === TEMPLATE_ID).map((p: any) => ({ id: p.id, jobId: p.metadata.job_id, service: p.metadata?.service || 'deposit', status: p.status, email: p.customer_email, createdAt: p.created_at, amount: p.total?.amount, cardSaved: !!p.payment_method_id })), hasMore: !!result.page_info?.has_next_page });
+});
+api.get('/api/admin/invoices', async c => {
+  await admin(c);
+  const cfg = configuration(c.env);
+  const result = await whop(c.env, 'GET', `/invoices?${new URLSearchParams({ account_id: cfg.accountId, first: '50', order: 'created_at', direction: 'desc' })}`);
+  if (!Array.isArray(result.data)) throw new ApiError(502, 'Whop did not return an invoice list.');
+  return c.json({ invoices: result.data.filter((i: any) => i.account_id === cfg.accountId && i.metadata?.template === TEMPLATE_ID).map((i: any) => ({
+    id: i.id, number: i.number, status: i.status, amount: i.amount_due?.amount ?? i.total?.amount, createdAt: i.created_at,
+    projectTotal: Number(i.metadata.project_total_cents || 0) / 100, depositCredit: Number(i.metadata.deposit_credit_cents || 0) / 100,
+    jobId: i.metadata.job_id || '', paymentUrl: invoiceUrl(c, i),
+  })), hasMore: !!result.page_info?.has_next_page });
 });
 api.post('/api/admin/invoices', async c => {
   await admin(c); enforceConfigured(c); rate(c, 'invoices', 10);
@@ -378,7 +391,7 @@ api.post('/api/admin/invoices', async c => {
     items: [{ variant_id: finalPlan.id }],
     ...(input.mode === 'auto' ? { payment_method_id: deposit.payment_method_id } : {}),
     metadata: { template: TEMPLATE_ID, job_id: deposit.metadata.job_id, deposit_payment_id: deposit.id, project_total_cents: String(Math.round(input.totalDollars * 100)), deposit_credit_cents: String(depositCents), job_completed: 'true', billing_mode: input.mode, owner_attests_customer_approved_charge: String(input.customerAuthorized) },
-  }, `roof-${deposit.metadata.job_id}-final`);
+  }, `roof-${deposit.metadata.job_id}-final-v2`);
   const result = await issueInvoice(c, invoice, deposit.metadata.job_id);
   // Manual mode yields a Whop-hosted payment URL. Owner can share it; sending email is a separate explicit action.
   return c.json({ ...result, paymentUrl: invoiceUrl(c, result.invoice), reused: false }, 201);
