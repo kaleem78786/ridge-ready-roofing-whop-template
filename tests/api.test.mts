@@ -106,12 +106,12 @@ test('analytics refusal never changes a successful saved-lead response', async (
   const visitor = await visitorCookie();
   const original = globalThis.fetch; let analyticsCalls = 0;
   globalThis.fetch = async url => {
-    if (String(url).endsWith('/leads')) return response({ id: 'lead_saved' }, 201);
+    if (String(url).endsWith('/leads')) return response({ id: 'lead_saved', email: { status: 'not_configured' } }, 201);
     analyticsCalls++; return response({ error: { code: 'event_scope_missing' } }, 403);
   };
   try {
     const r = await req('/leads', { name: 'Homeowner', email: 'home@example.com', phone: '+1 512 555 0100', address: '10 Test Street', zip: '78701', service: 'inspection', consent: true, requestId: crypto.randomUUID() }, visitor);
-    assert.equal(r.status, 201); assert.deepEqual(await r.json(), { id: 'lead_saved' }); assert.equal(analyticsCalls, 1);
+    assert.equal(r.status, 201); assert.deepEqual(await r.json(), { id: 'lead_saved', email: { status: 'not_configured' } }); assert.equal(analyticsCalls, 1);
   } finally { globalThis.fetch = original; }
 });
 test('a hosted execution context still waits for the actual analytics acknowledgement', { timeout: 2000 }, async () => {
@@ -120,7 +120,7 @@ test('a hosted execution context still waits for the actual analytics acknowledg
   const started = new Promise<void>(resolve => { start = resolve; });
   const acknowledgement = new Promise<Response>(resolve => { release = () => resolve(response({ id: 'biz_test:lead_waited' }, 201)); });
   globalThis.fetch = async url => {
-    if (String(url).endsWith('/leads')) return response({ id: 'lead_waited' }, 201);
+    if (String(url).endsWith('/leads')) return response({ id: 'lead_waited', email: { status: 'not_configured' } }, 201);
     start(); return acknowledgement;
   };
   try {
@@ -130,7 +130,7 @@ test('a hosted execution context still waits for the actual analytics acknowledg
     await started; await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(responded, false);
     release(); const result = await pending;
-    assert.equal(result.status, 201); assert.deepEqual(await result.json(), { id: 'lead_waited' });
+    assert.equal(result.status, 201); assert.deepEqual(await result.json(), { id: 'lead_waited', email: { status: 'not_configured' } });
   } finally { release(); globalThis.fetch = original; }
 });
 test('setup session is signed; changing the job cannot charge a stored method', async () => {
@@ -333,4 +333,43 @@ test('a sandbox visitor session cannot submit a production lead or cross-account
     assert.equal((await req('/leads', input, identity, { env: { WHOP_ENVIRONMENT: 'production' } })).status, 401);
     assert.equal((await req('/leads', input, identity, { env: { WHOP_ACCOUNT_ID: 'biz_other' } })).status, 401);
   } finally { globalThis.fetch = original; }
+});
+
+test('estimate receipts follow real lead creation; email failure preserves the saved lead', async () => {
+  const visitor = await visitorCookie();const original=globalThis.fetch;
+  const mailEnv={RESEND_API_KEY:'test-mail-key',ESTIMATE_EMAIL_FROM:'Roofing <estimates@roofing.test>',ESTIMATE_EMAIL_TEST_RECIPIENTS:'home@example.com'};
+  try {
+    for(const scenario of ['success','email_refused','lead_refused']){
+      let saved=false;let mailCalls=0;let receiptStatus='';
+      globalThis.fetch=async(url,init)=>{
+        const u=new URL(String(url));
+        if(u.hostname==='api.resend.com'){
+          assert.equal(saved,true);mailCalls++;
+          assert.deepEqual(JSON.parse(String(init?.body)).to,['home@example.com']);
+          return scenario==='email_refused'?response({message:'refused'},403):response({id:'mail_actual_receipt_1234'});
+        }
+        if(u.pathname==='/api/v1/leads'&&init?.method==='POST'){
+          if(scenario==='lead_refused')return response({error:{code:'lead_refused'}},400);
+          saved=true;return response({id:'lead_mailflow'},201);
+        }
+        if(u.pathname==='/api/v1/leads/lead_mailflow'&&init?.method==='PATCH'){
+          const metadata=JSON.parse(String(init.body)).metadata;receiptStatus=metadata.email_confirmation_status;
+          assert.equal(metadata.contact_consent,true);assert.equal(metadata.email,'home@example.com');
+          return response({id:'lead_mailflow'});
+        }
+        if(u.pathname==='/api/v1/events')return response({id:'event_actual'});
+        throw Error('Unexpected email workflow request');
+      };
+      const r=await req('/leads',{name:'Homeowner',email:'home@example.com',phone:'+1 512 555 0100',address:'10 Test Street',zip:'78701',service:'inspection',consent:true,requestId:crypto.randomUUID()},visitor,{env:mailEnv});
+      const d=await r.json() as any;
+      if(scenario==='lead_refused'){assert.equal(r.status,400);assert.equal(mailCalls,0);}
+      else{assert.equal(r.status,201);assert.equal(d.id,'lead_mailflow');assert.equal(mailCalls,1);assert.equal(d.email.status,scenario==='success'?'accepted':'failed');assert.equal(receiptStatus,d.email.status);}
+    }
+  }finally{globalThis.fetch=original;}
+});
+test('email readiness is owner-only and never serializes the provider key',async()=>{
+  const mailEnv={RESEND_API_KEY:'private-test-key-do-not-serialize',ESTIMATE_EMAIL_FROM:'Roofing <estimates@roofing.test>',ESTIMATE_EMAIL_TEST_RECIPIENTS:'home@example.com'};
+  assert.equal((await req('/admin/email',undefined,'',{env:mailEnv})).status,401);
+  const auth=cookies(await req('/admin/login',{password:env.ADMIN_PASSWORD}));
+  const r=await req('/admin/email',undefined,auth,{env:mailEnv});const raw=await r.text();assert.equal(r.status,200);assert.equal(JSON.parse(raw).configured,true);assert.equal(raw.includes(mailEnv.RESEND_API_KEY),false);
 });

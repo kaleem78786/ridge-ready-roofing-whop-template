@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { z } from 'zod';
 import { unwrapWebhook } from '@whop/sdk/helpers';
+import { emailConfiguration, sendEstimateEmail } from './email.ts';
 import { ApiError, configuration, safePayment, services, setting, TEMPLATE_ID, whop, whopPlatform, type Bindings, type Service } from './whop.ts';
 
 type App = { Bindings: Bindings };
@@ -219,17 +220,22 @@ api.post('/api/leads', async c => {
   let identity: Visitor;
   try { identity = await visitor(c); }
   catch { throw new ApiError(401, 'Sign in with Whop to send your estimate request to the roofing team.', 'whop_sign_in_required'); }
+  const metadata = { template: TEMPLATE_ID, request_id: input.requestId, name: input.name, email: input.email, phone: input.phone, address: input.address, zip: input.zip, service: input.service, message: input.message, contact_consent: true, consent_at: new Date().toISOString(), visitor_user_id: identity.userId, visitor_environment: configuration(c.env).environment };
   const result = await whop(c.env, 'POST', '/leads', {
       account_id: accountId,
       user_id: identity.userId,
       referrer: `${new URL(c.req.url).origin}/`,
-      metadata: { template: TEMPLATE_ID, request_id: input.requestId, name: input.name, email: input.email, phone: input.phone, address: input.address, zip: input.zip, service: input.service, message: input.message, contact_consent: true, consent_at: new Date().toISOString(), visitor_user_id: identity.userId, visitor_environment: configuration(c.env).environment },
+      metadata,
     }, `estimate-${input.requestId}`);
   if (!result.id?.startsWith('lead_')) throw new ApiError(502, 'Whop did not return a lead confirmation.');
   // Same event name/ID as browser whop.track: Whop deduplicates the actual conversion.
   // Complete this bounded, failure-tolerant delivery before the hosted request ends.
-  await mirrorEstimate(c, result, identity);
-  return c.json({ id: result.id }, 201);
+  const [, email] = await Promise.all([mirrorEstimate(c, result, identity), sendEstimateEmail(c.env, { ...input, leadId: result.id })]);
+  if (email.status !== 'not_configured') {
+    try { await whop(c.env, 'PATCH', `/leads/${result.id}`, { metadata: { ...metadata, email_confirmation_status: email.status, ...(email.id ? { email_confirmation_id: email.id } : {}) } }, `estimate-email-${input.requestId}-${email.status}`); }
+    catch { console.error('Estimate email status could not be saved to Whop'); }
+  }
+  return c.json({ id: result.id, email: { status: email.status } }, 201);
 });
 api.post('/api/checkout/start', async c => {
   enforceConfigured(c);
@@ -298,6 +304,11 @@ api.post('/api/admin/login', async c => {
   return c.json({ authenticated: true });
 });
 api.post('/api/admin/logout', c => { deleteCookie(c, 'roof_admin', { path: '/api' }); return c.json({ authenticated: false }); });
+api.get('/api/admin/email', async c => {
+  await admin(c);
+  const config = emailConfiguration(c.env);
+  return c.json({ configured: config.ready, sender: config.sender, sandbox: config.sandbox, testRecipientCount: config.recipients.length });
+});
 api.get('/api/admin/events', async c => {
   await admin(c);
   const { accountId, request } = analytics(c);
@@ -329,7 +340,7 @@ api.get('/api/admin/leads', async c => {
   const leads = result.data.filter((lead: any) => lead.metadata?.template === TEMPLATE_ID).map((lead: any) => ({
     id: string(lead.id, 100), createdAt: string(lead.created_at, 100),
     name: string(lead.metadata.name || lead.user?.name, 100), email: string(lead.metadata.email || lead.user?.email, 254),
-    phone: string(lead.metadata.phone, 30), address: string(lead.metadata.address, 250), zip: string(lead.metadata.zip, 10),
+    phone: string(lead.metadata.phone, 30), address: string(lead.metadata.address, 250), zip: string(lead.metadata.zip, 10), emailStatus: string(lead.metadata.email_confirmation_status, 30),
     service: string(lead.metadata.service, 50), message: string(lead.metadata.message), contactConsent: lead.metadata.contact_consent === true,
   }));
   c.header('Cache-Control', 'no-store');

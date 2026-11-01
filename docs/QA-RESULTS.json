@@ -68,7 +68,7 @@
     "body": "{\"received\":true}"
   },
   "tests": {
-    "passed": 33,
+    "passed": 39,
     "failed": 0
   },
   "mobile": {
@@ -79,5 +79,14 @@
     "Whop merchant verification required before native invoice issue/payment",
     "No final-balance charge or delivered invoice email verified",
     "No replacement recording produced in this repair"
-  ]
+  ],
+  "estimateEmail": {
+    "recipient": "mystudentlife78.6@gmail.com",
+    "leadId": "lead_j338YR4AWBJqx",
+    "apiStatus": 201,
+    "providerStatus": "accepted",
+    "inboxArrival": "confirmed by recipient in this conversation",
+    "senderMode": "Resend test sender; configured sandbox inbox only",
+    "productionRequirement": "Verify a sending domain before mailing real customers"
+  }
 }

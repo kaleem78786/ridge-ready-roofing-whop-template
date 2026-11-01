@@ -9,7 +9,7 @@ Ab website ka main flow **sandbox** hai. Production CLI aur sandbox merchant don
 
 1. **Request an estimate** par naam, email, phone, property address, ZIP aur service dein. Contact consent accept karein.
 2. Whop sign-in poora karein. Ab sandbox user ko sandbox account se hi connect kiya jata hai. Form login ke baad khud submit hota hai.
-3. Asli Whop lead banne par **Request received** confirmation milti hai. Form submit karne ki koi fee nahi. Yeh screen email bhejne ka claim nahi karti.
+3. Asli Whop lead banne par **Request received** confirmation milti hai. Form submit karne ki koi fee nahi. Lead save hone ke baad branded confirmation email jati hai. Email fail ho to request phir bhi saved rehti hai aur screen sahi status batati hai.
 4. Inspection $149, tune-up $399, replacement ka deposit $500 hai. $500 poori roof ki qeemat nahi; pehle written scope approve karna zaroori hai.
 5. Deposit mein pehle Whop card save karta hai, phir $500 charge karta hai. Card details sirf Whop ke hosted fields mein jati hain. Test card `4242 4242 4242 4242`, future expiry aur 3-digit CVC **sirf sandbox** mein use karein.
 6. Payment ka final status Whop se verify hota hai. Processing ho to screen khud dobara check karti hai.
@@ -36,3 +36,11 @@ Whop Events API mein `estimate_requested`, `service_viewed` aur `deposit_started
 `src/config.ts` se company name, contact, service areas, services, prices aur reviews badal sakte hain. Naye merchant ke liye us ke apne plans, keys aur OAuth app configure karein. Demo reviews ko asli reviews ke baghair verified na kahein.
 
 Reference video ka customer/owner workflow dekh kar identity, card-saving, pending status aur invoice history ke maslay fix kiye hain. Is repair mein nayi screen recording nahi banayi gayi.
+
+## Inbox confirmation ab working hai
+
+Live estimate form se Resend ko confirmation bheji gayi aur aap ne `mystudentlife78.6@gmail.com` ke **Inbox** mein arrival confirm ki hai. Subject: **We got your estimate request, Muhammad**. Owner portal mein lead ka **Queued** status provider acceptance dikhata hai; yeh khud Inbox delivery ka proof nahi hota.
+
+Abhi Resend test sender ki wajah se automatic email sirf isi configured test Gmail par jati hai. Asli clients ke inbox ke liye apna sending domain verify karke `ESTIMATE_EMAIL_FROM` badalna hoga. API key sirf private `.dev.vars` aur Whop Secrets mein hai, source repo/ZIP mein nahi.
+
+Sandbox card: **4242 4242 4242 4242**, expiry **12/34**, CVC **123**, country **United States**, ZIP **27601**. Yeh test details production par istemal nahi karni.

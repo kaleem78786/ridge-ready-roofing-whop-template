@@ -11,7 +11,7 @@ document.title = `${company.name} Roofing | A stronger roof. A clearer process.`
 
 function Logo(){return <a href="/" className="logo" aria-label={`${company.name} home`}><span className="logo-mark"><Home size={26} strokeWidth={1.6}/></span><span>{company.name}<small>{company.descriptor}</small></span></a>}
 function EstimateForm(){
-  const [state,setState]=useState<'idle'|'loading'|'success'|'error'>('idle');const [message,setMessage]=useState('');const [lead,setLead]=useState('');const [identity,setIdentity]=useState<any>(null);const [showPopup,setShowPopup]=useState(false);const form=useRef<HTMLFormElement>(null);const id=useRef(crypto.randomUUID());
+  const [emailStatus,setEmailStatus]=useState('');const [state,setState]=useState<'idle'|'loading'|'success'|'error'>('idle');const [message,setMessage]=useState('');const [lead,setLead]=useState('');const [identity,setIdentity]=useState<any>(null);const [showPopup,setShowPopup]=useState(false);const form=useRef<HTMLFormElement>(null);const id=useRef(crypto.randomUUID());
   useEffect(()=>{
     api('auth/whop').then(async (ident)=>{
       setIdentity(ident);
@@ -28,7 +28,7 @@ function EstimateForm(){
           setState('loading');
           const d = draft.fields as Record<string, any>;
           const r = await api('leads', { ...d, consent: d.consent === 'on', requestId: id.current });
-          setLead(r.id);
+          setLead(r.id);setEmailStatus(r.email?.status||'');
           track('estimate_requested', { service: d.service }, r.id);
           setState('success');
           setShowPopup(true);
@@ -55,12 +55,13 @@ function EstimateForm(){
     try{sessionStorage.removeItem('roofing:estimate-draft');}catch{}
     form.current?.reset();
     setState('idle');
-    setShowPopup(false);
+    setShowPopup(false);setEmailStatus('');
   }
   async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const f=e.currentTarget;const d=Object.fromEntries(new FormData(f));setState('loading');
     if(!identity?.authenticated){try{sessionStorage.setItem('roofing:estimate-draft',JSON.stringify({requestId:id.current,fields:d}));}catch{}window.location.assign('/api/auth/whop/start');return;}
-    try{const r=await api('leads',{...d,consent:d.consent==='on',requestId:id.current});setLead(r.id);track('estimate_requested',{service:d.service},r.id);setState('success');setShowPopup(true);try{sessionStorage.removeItem('roofing:estimate-draft');}catch{}f.reset();}
+    try{const r=await api('leads',{...d,consent:d.consent==='on',requestId:id.current});setLead(r.id);setEmailStatus(r.email?.status||'');track('estimate_requested',{service:d.service},r.id);setState('success');setShowPopup(true);try{sessionStorage.removeItem('roofing:estimate-draft');}catch{}f.reset();}
     catch(err){setMessage((err as Error).message);setState('error');}}
+  const emailNotice = emailStatus === 'accepted' ? 'Your confirmation email is on its way. Check your inbox and spam folder.' : 'Your request is saved. An email confirmation was not sent; our team will follow up using your contact details.';
   const successModal = showPopup && (
     <div className="dialog-backdrop" onClick={()=>setShowPopup(false)} role="dialog" aria-modal="true" style={{zIndex:100}}>
       <div className="checkout-dialog" onClick={e=>e.stopPropagation()} style={{textAlign:'center',maxWidth:460}}>
@@ -75,6 +76,7 @@ function EstimateForm(){
         <p style={{fontSize:13,lineHeight:1.6,marginBottom:18}}>
           Thank you! Your estimate request has been securely registered in Whop. Our roofing team has received your property details and will reach out to you by phone or email shortly.
         </p>
+        <p role="status" style={{fontSize:13,marginBottom:18}}>{emailNotice}</p>
         <div style={{background:'#f4f7f2',border:'1px solid #dce5d5',borderRadius:6,padding:'12px 16px',marginBottom:22,fontSize:12,textAlign:'left'}}>
           <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
             <span style={{color:'var(--muted)'}}>Status:</span>
@@ -92,7 +94,7 @@ function EstimateForm(){
       </div>
     </div>
   );
-  if(state==='success')return <>{successModal}<div className="form-success" role="status"><CheckCircle2 size={44}/><h3>Your request is on the list.</h3><p>Our team will review your roof details and contact you during business hours to discuss next steps.</p><small>Whop lead reference: {lead}</small><button className="button dark" onClick={resetForm}>Send another request <ArrowRight size={16}/></button></div></>;
+  if(state==='success')return <>{successModal}<div className="form-success" role="status"><CheckCircle2 size={44}/><h3>Your request is on the list.</h3><p>Our team will review your roof details and contact you during business hours to discuss next steps.</p><p>{emailNotice}</p><small>Whop lead reference: {lead}</small><button className="button dark" onClick={resetForm}>Send another request <ArrowRight size={16}/></button></div></>;
   return <>{successModal}<form ref={form} onSubmit={submit} className="estimate-form" autoComplete="off">
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'1rem'}}>
       <p className="checkout-note" style={{margin:0}}>{identity?.authenticated?`Connected with Whop${identity.user?.name?` as ${identity.user.name}`:''}. Your request goes directly to our team.`:'Use your Whop account to securely connect your estimate request. Your entered details are kept while you sign in.'}</p>

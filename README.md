@@ -12,11 +12,12 @@ Original React website and Hono API Worker deployed with the official Whop Websi
 | Flow | Actual result |
 | --- | --- |
 | Estimate | Whop lead `lead_j338YR4AWBJqx`; HTTP 201 and account read-back |
+| Estimate email | Branded confirmation accepted by Resend; recipient confirmed arrival in Gmail Inbox |
 | Card on file | Setup `sint_D2S0S2vjYEpm9`, status `succeeded` |
 | Project deposit | Payment `pay_g8OjsjL0UOXnSb`, status `paid`, $500 USD |
 | Final balance | Native invoice `pay_GtW3MnTe5QibMf`, #00000002, $8,000 due, **draft** |
 | Custom pixels | All three names read back from Whop Events API |
-| Checks | 33 automated tests; TypeScript check; desktop/mobile live checks |
+| Checks | 39 automated tests; TypeScript check; desktop/mobile live checks |
 
 **Remaining external gate:** Whop refuses invoice issuance with `invoice_account_verification_required`. The $8,000 draft exists, but it has no payable link until the merchant completes verification. No final-balance charge or delivered invoice email is claimed. The portal shows the exact state and a Whop verification link. See [Whop invoice issue errors](https://docs.whop.com/developer/guides/invoices).
 
@@ -59,7 +60,7 @@ The separate production plans are `plan_S99ZW6IxA7UGc`, `plan_SDa0PRrQYAEdX`, an
 
 ## Customer and owner workflow
 
-1. A customer completes the estimate form and signs in with Whop. The draft survives sign-in and submits afterward. Confirmation requires an actual Whop `lead_` response. The form makes no charge and does not claim an email was sent.
+1. A customer completes the estimate form and signs in with Whop. The draft survives sign-in and submits afterward. Confirmation requires an actual Whop `lead_` response. The form makes no charge. After the lead is saved, it submits a branded confirmation to Resend and reports the actual email result. The recipient has confirmed arrival in Gmail Inbox in this deployment.
 2. Sandbox-only demos need a **sandbox OAuth app**, not the production Website app ID. Set `WHOP_OAUTH_APP_ID`, `WHOP_OAUTH_ORIGIN=https://sandbox-api.whop.com` and `WHOP_OAUTH_AUTHORIZE_HOST=https://sandbox-api.whop.com`; register the exact hosted `/api/auth/whop/callback` URI on that public OAuth app. This deployment uses `app_d7ZibNnSkufUwV`.
 3. The server binds the verified visitor identity to the account and environment. A missing sandbox user never falls back to the merchant owner. In production, leave the OAuth overrides empty and use the production Website app.
 4. The customer approves the written project estimate before a deposit. Whop `PaymentElement`, `EmailElement` and required `BrandingElement` collect details. Deposit Elements use `mode="setup"` and `setupFutureUsage="off_session"`; the verified setup is then used for the deposit payment. No custom card form exists.
@@ -81,5 +82,11 @@ Webhook endpoints verify signatures with `@whop/sdk/helpers`: `/api/webhooks/who
 ## Implemented Whop features
 
 This reusable roofing template uses Whop Websites hosting, three one-time plans, Payment Elements with express checkout and required branding, authenticated estimate capture through the Leads API, setup-intent card storage followed by a project deposit, and native final-balance invoices with manual payment or authorized stored-method charging. Its owner portal reads leads, deposits, persistent invoice history and ingested custom pixel events directly from Whop. It also verifies signed webhooks and keeps sandbox identities, plans and payment credentials separate from production. Invoice issuance remains gated by this merchant's Whop verification.
+
+## Estimate confirmation email
+
+`src/email.ts` builds the branded receipt from company configuration and sends it only after Whop confirms a lead. Set `RESEND_API_KEY`, `ESTIMATE_EMAIL_FROM` and, in sandbox, `ESTIMATE_EMAIL_TEST_RECIPIENTS` in Whop app Secrets. The sandbox allowlist currently contains only the account owner's Gmail. A verified sending domain is needed to deliver to real customers; the current Resend test sender is for the owner's inbox.
+
+A provider failure cannot discard a saved lead or display a false email success. Each request has a stable email idempotency key, and Whop lead metadata records the actual provider acceptance/failure status. Resend acceptance means queued, not delivered: this test's Inbox arrival was separately confirmed by the recipient. The owner desk shows sender readiness and each lead's receipt status. No marketing subscription is created. See [Resend send API](https://resend.com/docs/api-reference/emails/send-email) and [idempotency keys](https://resend.com/docs/dashboard/emails/idempotency-keys).
 
 Roman Urdu instructions: [docs/SAMJHAI.md](docs/SAMJHAI.md).

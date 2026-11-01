@@ -6,7 +6,7 @@ import { company } from './config';
 type Config = { ready: boolean; environment: string; accountId: string; missing: string[]; plans: Record<string, string> };
 type InvoiceRow = { id: string; number: string; status: string; amount: string | number; projectTotal: number; depositCredit: number; jobId: string; paymentUrl: string | null };
 type Job = { id: string; jobId: string; service?: string; status: string; email?: string; createdAt: string; amount: string | number; cardSaved: boolean };
-type Lead = { id: string; createdAt: string; name: string; email: string; phone: string; address: string; zip: string; service: string; message: string; contactConsent: boolean };
+type Lead = { id: string; createdAt: string; name: string; email: string; phone: string; address: string; zip: string; service: string; message: string; contactConsent: boolean; emailStatus?: string };
 type ReceivedEvent = { id: string; eventId: string; name: string; time: string; path: string };
 type InvoiceResult = { invoice: { id: string; status: string; amount_due?: { amount: string | number }; scheduled_charge_at?: string | null }; paymentUrl?: string | null; reused: boolean; issuanceError?: { code: string; message: string } };
 const dollars = (value: string | number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value));
@@ -33,6 +33,7 @@ export function Operations() {
   const [invoicesLoading, setInvoicesLoading] = useState(true);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [notice, setNotice] = useState('');
+  const [emailConfig, setEmailConfig] = useState<{ configured: boolean; sender: string; sandbox: boolean; testRecipientCount: number } | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [leadsHasMore, setLeadsHasMore] = useState(false);
@@ -57,7 +58,7 @@ export function Operations() {
   }
   async function refresh() {
     setBusy('refresh'); setError('');
-    try { await Promise.all([loadJobs(), loadLeads(), loadReceivedEvents(), loadInvoices()]); } catch (error) { setError(errorMessage(error)); }
+    try { await Promise.all([loadJobs(), loadLeads(), loadReceivedEvents(), loadInvoices(), loadEmailConfig()]); } catch (error) { setError(errorMessage(error)); }
     finally { setBusy(''); }
   }
   async function loadLeads() {
@@ -78,6 +79,9 @@ export function Operations() {
     catch (error) { setInvoiceError(errorMessage(error)); }
     finally { setInvoicesLoading(false); }
   }
+  async function loadEmailConfig() {
+    try { setEmailConfig(await api('admin/email')); } catch { setEmailConfig(null); }
+  }
   async function emailInvoice(id: string) {
     setBusy('send'); setNotice(''); setError('');
     try { await api(`admin/invoices/${id}/send`, {}); setNotice('Whop accepted the invoice send request. Check delivery and payment status in Whop.'); await loadInvoices(); }
@@ -89,7 +93,7 @@ export function Operations() {
   }
   useEffect(() => {
     api<Config>('config').then(setConfig).catch(error => setConfigError(errorMessage(error)));
-    Promise.all([loadJobs(), loadLeads(), loadReceivedEvents(), loadInvoices()]).catch(() => { /* An absent owner session displays the login form. */ });
+    Promise.all([loadJobs(), loadLeads(), loadReceivedEvents(), loadInvoices(), loadEmailConfig()]).catch(() => { /* An absent owner session displays the login form. */ });
     const update = () => setEvents([...(window.__roofingEvents || [])]);
     window.addEventListener('roofing:pixel', update);
     return () => window.removeEventListener('roofing:pixel', update);
@@ -98,14 +102,14 @@ export function Operations() {
     event.preventDefault(); setBusy('login'); setError('');
     try {
       await api('admin/login', { password });
-      setPassword(''); setAuthenticated(true); await Promise.all([loadJobs(), loadLeads(), loadReceivedEvents(), loadInvoices()]);
+      setPassword(''); setAuthenticated(true); await Promise.all([loadJobs(), loadLeads(), loadReceivedEvents(), loadInvoices(), loadEmailConfig()]);
     } catch (error) { setError(errorMessage(error)); }
     finally { setBusy(''); }
   }
   async function logout() {
     setBusy('logout'); setError('');
     try {
-      await api('admin/logout', {}); setAuthenticated(false); setJobs([]); setInvoices([]); setLeads([]); setReceivedEvents([]); setResult(null); setPaymentId('');
+      await api('admin/logout', {}); setAuthenticated(false); setJobs([]); setInvoices([]); setEmailConfig(null); setLeads([]); setReceivedEvents([]); setResult(null); setPaymentId('');
     } catch (error) { setError(errorMessage(error)); }
     finally { setBusy(''); }
   }
@@ -162,9 +166,13 @@ export function Operations() {
         </div>
       </div>
       <section className="portal-panel">
+        <h2>Estimate confirmation emails</h2>
+        {emailConfig ? <><p><strong>{emailConfig.configured ? 'Email service connected' : 'Email sender is not connected yet'}</strong></p><p>{emailConfig.configured ? `Sender: ${emailConfig.sender}` : 'Configure the server-side email key and verified sender before customers can receive an automatic estimate receipt.'}</p>{emailConfig.sandbox && <p>Sandbox mail is restricted to {emailConfig.testRecipientCount} configured test inbox(es). A queued receipt is not proof of inbox delivery.</p>}</> : <p>Checking email configuration…</p>}
+      </section>
+      <section className="portal-panel">
         <div className="portal-actions"><h2>Estimate requests</h2><button className="text-link" onClick={refresh} disabled={!!busy}><RefreshCw size={14} /> {busy === 'refresh' ? 'Refreshing…' : 'Refresh records'}</button></div>
         <p>These requests are read back from the connected Whop account. Only leads created by this template are shown.</p>
-        {leads.length ? <table><thead><tr><th scope="col">Whop lead / received</th><th scope="col">Customer</th><th scope="col">Property</th><th scope="col">Request</th></tr></thead><tbody>{leads.map(lead => <tr key={lead.id}><td><code>{lead.id}</code><br /><small>{new Date(lead.createdAt).toLocaleString()}</small></td><td><strong>{lead.name || 'Homeowner'}</strong><br />{lead.email}<br />{lead.phone}<br /><small>{lead.contactConsent ? 'Contact consent recorded' : 'Check contact consent in Whop'}</small></td><td>{lead.address}<br />{lead.zip}</td><td><strong>{lead.service || 'General estimate'}</strong>{lead.message && <details><summary>Request details</summary><p>{lead.message}</p></details>}</td></tr>)}</tbody></table> : <p>No estimate requests are recorded for this template in the latest Whop lead records.</p>}
+        {leads.length ? <table><thead><tr><th scope="col">Whop lead / received</th><th scope="col">Customer</th><th scope="col">Property</th><th scope="col">Request</th><th scope="col">Confirmation email</th></tr></thead><tbody>{leads.map(lead => <tr key={lead.id}><td><code>{lead.id}</code><br /><small>{new Date(lead.createdAt).toLocaleString()}</small></td><td><strong>{lead.name || 'Homeowner'}</strong><br />{lead.email}<br />{lead.phone}<br /><small>{lead.contactConsent ? 'Contact consent recorded' : 'Check contact consent in Whop'}</small></td><td>{lead.address}<br />{lead.zip}</td><td><strong>{lead.service || 'General estimate'}</strong>{lead.message && <details><summary>Request details</summary><p>{lead.message}</p></details>}</td><td>{lead.emailStatus === 'accepted' ? 'Queued' : lead.emailStatus === 'failed' ? 'Not sent' : lead.emailStatus === 'restricted' ? 'Sandbox inbox restriction' : 'No email delivery recorded'}</td></tr>)}</tbody></table> : <p>No estimate requests are recorded for this template in the latest Whop lead records.</p>}
         {leadsHasMore && <p>Showing this template's requests from the latest 50 account leads. Review older records in the Whop dashboard.</p>}
       </section>
       <section className="portal-panel">
