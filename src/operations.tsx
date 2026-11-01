@@ -105,6 +105,8 @@ export function Operations() {
   const paidJobs = jobs.filter(job => job.status === 'paid' && (!job.service || job.service === 'deposit'));
   const balance = selected && total ? Number(total) - Number(selected.amount) : null;
   const paymentUrl = verifiedUrl(result?.paymentUrl);
+  const totalCollected = jobs.reduce((sum, job) => sum + (job.status === 'paid' ? Number(job.amount) : 0), 0);
+  const totalDeposits = paidJobs.reduce((sum, job) => sum + Number(job.amount), 0);
 
   return <main className="container portal">
     <a className="text-link" href="/"><ArrowLeft size={16} /> Back to {company.name}</a>
@@ -119,6 +121,23 @@ export function Operations() {
         <button className="button dark" disabled={!!busy}>{busy === 'login' ? 'Signing in…' : 'Sign in securely'} <ArrowUpRight size={17} /></button>
       </form>
     </section> : <>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:'15px',margin:'25px 0 10px'}}>
+        <div style={{background:'#f4f8ed',border:'1px solid #dbe6ce',padding:'16px',borderRadius:'6px'}}>
+          <small style={{fontSize:'10px',textTransform:'uppercase',letterSpacing:'1px',color:'#556358',display:'block'}}>Total Collected</small>
+          <div style={{fontSize:'24px',fontWeight:'700',color:'#1a332d',marginTop:'4px'}}>{dollars(totalCollected)}</div>
+          <span style={{fontSize:'11px',color:'#6b7e6e'}}>{jobs.filter(j => j.status === 'paid').length} payments processed</span>
+        </div>
+        <div style={{background:'#f4f8ed',border:'1px solid #dbe6ce',padding:'16px',borderRadius:'6px'}}>
+          <small style={{fontSize:'10px',textTransform:'uppercase',letterSpacing:'1px',color:'#556358',display:'block'}}>Project Deposits Ready</small>
+          <div style={{fontSize:'24px',fontWeight:'700',color:'#1a332d',marginTop:'4px'}}>{dollars(totalDeposits)}</div>
+          <span style={{fontSize:'11px',color:'#6b7e6e'}}>Credited toward final balance</span>
+        </div>
+        <div style={{background:'#f4f8ed',border:'1px solid #dbe6ce',padding:'16px',borderRadius:'6px'}}>
+          <small style={{fontSize:'10px',textTransform:'uppercase',letterSpacing:'1px',color:'#556358',display:'block'}}>Estimate Leads</small>
+          <div style={{fontSize:'24px',fontWeight:'700',color:'#1a332d',marginTop:'4px'}}>{leads.length} Active Leads</div>
+          <span style={{fontSize:'11px',color:'#6b7e6e'}}>Whop Leads API connected</span>
+        </div>
+      </div>
       <section className="portal-panel">
         <div className="portal-actions"><h2>Estimate requests</h2><button className="text-link" onClick={refresh} disabled={!!busy}><RefreshCw size={14} /> {busy === 'refresh' ? 'Refreshing…' : 'Refresh records'}</button></div>
         <p>These requests are read back from the connected Whop account. Only leads created by this template are shown.</p>
