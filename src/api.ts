@@ -320,7 +320,7 @@ api.get('/api/admin/jobs', async c => {
   await admin(c); const cfg = configuration(c.env);
   const params = new URLSearchParams({ account_id: cfg.accountId, first: '100', order: 'created_at', direction: 'desc' });
   const result = await whop(c.env, 'GET', `/payments?${params}`);
-  return c.json({ jobs: result.data.filter((p: any) => p.metadata?.template === TEMPLATE_ID && p.metadata?.service === 'deposit').map((p: any) => ({ id: p.id, jobId: p.metadata.job_id, status: p.status, email: p.customer_email, createdAt: p.created_at, amount: p.total?.amount, cardSaved: !!p.payment_method_id })), hasMore: !!result.page_info?.has_next_page });
+  return c.json({ jobs: result.data.filter((p: any) => p.metadata?.template === TEMPLATE_ID).map((p: any) => ({ id: p.id, jobId: p.metadata.job_id, service: p.metadata?.service || 'deposit', status: p.status, email: p.customer_email, createdAt: p.created_at, amount: p.total?.amount, cardSaved: !!p.payment_method_id })), hasMore: !!result.page_info?.has_next_page });
 });
 api.post('/api/admin/invoices', async c => {
   await admin(c); enforceConfigured(c); rate(c, 'invoices', 10);

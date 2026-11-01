@@ -4,7 +4,7 @@ import { api, type PixelEvent } from './lib';
 import { company } from './config';
 
 type Config = { ready: boolean; environment: string; missing: string[]; plans: Record<string, string> };
-type Job = { id: string; jobId: string; status: string; email?: string; createdAt: string; amount: string | number; cardSaved: boolean };
+type Job = { id: string; jobId: string; service?: string; status: string; email?: string; createdAt: string; amount: string | number; cardSaved: boolean };
 type Lead = { id: string; createdAt: string; name: string; email: string; phone: string; address: string; zip: string; service: string; message: string; contactConsent: boolean };
 type ReceivedEvent = { id: string; eventId: string; name: string; time: string; path: string };
 type InvoiceResult = { invoice: { id: string; status: string; amount_due?: { amount: string | number }; scheduled_charge_at?: string | null }; paymentUrl?: string | null; reused: boolean; issuanceError?: { code: string; message: string } };
@@ -102,7 +102,7 @@ export function Operations() {
     finally { setBusy(''); }
   }
   const selected = jobs.find(job => job.id === paymentId);
-  const paidJobs = jobs.filter(job => job.status === 'paid');
+  const paidJobs = jobs.filter(job => job.status === 'paid' && (!job.service || job.service === 'deposit'));
   const balance = selected && total ? Number(total) - Number(selected.amount) : null;
   const paymentUrl = verifiedUrl(result?.paymentUrl);
 
@@ -126,9 +126,9 @@ export function Operations() {
         {leadsHasMore && <p>Showing this template's requests from the latest 50 account leads. Review older records in the Whop dashboard.</p>}
       </section>
       <section className="portal-panel">
-        <div className="portal-actions"><h2>Project deposits</h2><button className="text-link" onClick={refresh} disabled={!!busy}><RefreshCw size={14} /> {busy === 'refresh' ? 'Refreshing…' : 'Refresh records'}</button><button className="text-link" onClick={logout} disabled={!!busy}>Sign out</button></div>
+        <div className="portal-actions"><h2>Project deposits & payments</h2><button className="text-link" onClick={refresh} disabled={!!busy}><RefreshCw size={14} /> {busy === 'refresh' ? 'Refreshing…' : 'Refresh records'}</button><button className="text-link" onClick={logout} disabled={!!busy}>Sign out</button></div>
         <p>Records are read from Whop. Only a paid deposit can be used for a final invoice; the server rechecks its ownership, plan, and refund status.</p>
-        {jobs.length ? <table><thead><tr><th scope="col">Project / payment</th><th scope="col">Customer</th><th scope="col">Deposit</th><th scope="col">Status</th><th scope="col">Saved method</th></tr></thead><tbody>{jobs.map(job => <tr key={job.id}><td><strong>{job.jobId}</strong><br /><code>{job.id}</code></td><td>{job.email || 'Available in Whop'}</td><td>{dollars(job.amount)}</td><td>{job.status}</td><td>{job.cardSaved ? 'Available' : 'Unavailable'}</td></tr>)}</tbody></table> : <p>No project deposits are recorded for this template yet.</p>}
+        {jobs.length ? <table><thead><tr><th scope="col">Project / payment</th><th scope="col">Customer</th><th scope="col">Service / Amount</th><th scope="col">Status</th><th scope="col">Saved method</th></tr></thead><tbody>{jobs.map(job => <tr key={job.id}><td><strong>{job.jobId}</strong><br /><code>{job.id}</code></td><td>{job.email || 'Available in Whop'}</td><td><strong>{dollars(job.amount)}</strong><br /><small>{job.service === 'repair' ? 'Roof tune-up' : job.service === 'inspection' ? 'Roof inspection' : 'Project deposit'}</small></td><td>{job.status}</td><td>{job.cardSaved ? 'Available' : 'Unavailable'}</td></tr>)}</tbody></table> : <p>No project deposits or payments are recorded for this template yet.</p>}
         {hasMore && <p>Showing the latest 100 payments. Review older records in Whop before billing a project outside this list.</p>}
       </section>
       <section className="portal-panel">
