@@ -12,14 +12,39 @@ document.title = `${company.name} Roofing | A stronger roof. A clearer process.`
 function Logo(){return <a href="/" className="logo" aria-label={`${company.name} home`}><span className="logo-mark"><Home size={26} strokeWidth={1.6}/></span><span>{company.name}<small>{company.descriptor}</small></span></a>}
 function EstimateForm(){
   const [state,setState]=useState<'idle'|'loading'|'success'|'error'>('idle');const [message,setMessage]=useState('');const [lead,setLead]=useState('');const [identity,setIdentity]=useState<any>(null);const form=useRef<HTMLFormElement>(null);const id=useRef(crypto.randomUUID());
-  useEffect(()=>{api('auth/whop').then(setIdentity).catch(()=>setIdentity({authenticated:false}));try{const draft=JSON.parse(sessionStorage.getItem('roofing:estimate-draft')||'null');if(draft){id.current=draft.requestId||id.current;for(const[k,v]of Object.entries(draft.fields)){const el=form.current?.elements.namedItem(k) as HTMLInputElement|null;if(el){if(el.type==='checkbox')el.checked=v==='on';else el.value=String(v);}}}}catch{}},[]);
+  useEffect(()=>{
+    api('auth/whop').then(setIdentity).catch(()=>setIdentity({authenticated:false}));
+    try{
+      const isOAuth = window.location.search.includes('whop_login=');
+      const draft=JSON.parse(sessionStorage.getItem('roofing:estimate-draft')||'null');
+      if(draft && isOAuth){
+        id.current=draft.requestId||id.current;
+        for(const[k,v]of Object.entries(draft.fields)){
+          const el=form.current?.elements.namedItem(k) as HTMLInputElement|null;
+          if(el){if(el.type==='checkbox')el.checked=v==='on';else el.value=String(v);}
+        }
+      } else {
+        form.current?.reset();
+      }
+      sessionStorage.removeItem('roofing:estimate-draft');
+    }catch{}
+  },[]);
+  function resetForm(){
+    id.current=crypto.randomUUID();
+    try{sessionStorage.removeItem('roofing:estimate-draft');}catch{}
+    form.current?.reset();
+    setState('idle');
+  }
   async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const f=e.currentTarget;const d=Object.fromEntries(new FormData(f));setState('loading');
     if(!identity?.authenticated){try{sessionStorage.setItem('roofing:estimate-draft',JSON.stringify({requestId:id.current,fields:d}));}catch{}window.location.assign('/api/auth/whop/start');return;}
-    try{const r=await api('leads',{...d,consent:d.consent==='on',requestId:id.current});setLead(r.id);track('estimate_requested',{service:d.service},r.id);setState('success');try{sessionStorage.removeItem('roofing:estimate-draft')}catch{}f.reset();}
+    try{const r=await api('leads',{...d,consent:d.consent==='on',requestId:id.current});setLead(r.id);track('estimate_requested',{service:d.service},r.id);setState('success');try{sessionStorage.removeItem('roofing:estimate-draft');}catch{}f.reset();}
     catch(err){setMessage((err as Error).message);setState('error');}}
-  if(state==='success')return <div className="form-success" role="status"><CheckCircle2 size={44}/><h3>Your request is on the list.</h3><p>Our team will review your roof details and contact you during business hours to discuss next steps.</p><small>Whop lead reference: {lead}</small><button className="button dark" onClick={()=>{id.current=crypto.randomUUID();setState('idle')}}>Send another request <ArrowRight size={16}/></button></div>;
-  return <form ref={form} onSubmit={submit} className="estimate-form">
-    <p className="checkout-note">{identity?.authenticated?`Connected with Whop${identity.user?.name?` as ${identity.user.name}`:''}. Your request goes directly to our team.`:'Use your Whop account to securely connect your estimate request. Your entered details are kept while you sign in.'}</p>
+  if(state==='success')return <div className="form-success" role="status"><CheckCircle2 size={44}/><h3>Your request is on the list.</h3><p>Our team will review your roof details and contact you during business hours to discuss next steps.</p><small>Whop lead reference: {lead}</small><button className="button dark" onClick={resetForm}>Send another request <ArrowRight size={16}/></button></div>;
+  return <form ref={form} onSubmit={submit} className="estimate-form" autoComplete="off">
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'1rem'}}>
+      <p className="checkout-note" style={{margin:0}}>{identity?.authenticated?`Connected with Whop${identity.user?.name?` as ${identity.user.name}`:''}. Your request goes directly to our team.`:'Use your Whop account to securely connect your estimate request. Your entered details are kept while you sign in.'}</p>
+      <button type="button" className="text-link" style={{fontSize:'0.82rem',whiteSpace:'nowrap',marginTop:'0.2rem'}} onClick={resetForm}>Clear form</button>
+    </div>
     <div className="form-row"><label>Full name<input name="name" autoComplete="name" required maxLength={100} placeholder="Alex Morgan"/></label><label>Email address<input type="email" name="email" autoComplete="email" required maxLength={200} placeholder="alex@example.com"/></label></div>
     <div className="form-row"><label>Phone number<input type="tel" name="phone" autoComplete="tel" required minLength={10} maxLength={25} placeholder="(919) 555-0123"/></label><label>ZIP code<input name="zip" autoComplete="postal-code" required pattern="[0-9]{5}" maxLength={5} inputMode="numeric" placeholder="27601"/></label></div>
     <label>Property address<input name="address" autoComplete="street-address" required maxLength={200} placeholder="Street address, city"/></label>
