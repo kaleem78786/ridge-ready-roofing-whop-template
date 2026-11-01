@@ -39,10 +39,16 @@ function safeLeadError(message: unknown): string | undefined {
     .replace(/\b[A-Za-z0-9_-]{24,}(?:\.[A-Za-z0-9_-]+)*\b/g, '[token]')
     .replace(/\b\d{10,19}\b/g, '[number]').slice(0, 400);
 }
-export async function whop<T = any>(env: Bindings, method: string, path: string, body?: unknown, key?: string): Promise<T> {
+/** Call the Whop platform proxy (production API, keyless). Falls back to production API key. */
+export async function whopPlatform<T = any>(env: Bindings, method: string, path: string, body?: unknown, key?: string): Promise<T> {
+  return whop(env, method, path, body, key, true);
+}
+export async function whop<T = any>(env: Bindings, method: string, path: string, body?: unknown, key?: string, forceProduction = false): Promise<T> {
   if (!/^\/[a-z_]+(?:[/?][a-zA-Z0-9_?=&%.,:-]*)*$/.test(path)) throw new ApiError(500, 'Invalid API route.');
-  const sandbox = configuration(env).environment === 'sandbox';
-  const token = sandbox ? setting(env, 'WHOP_SANDBOX_API_KEY') || (setting(env, 'ROOFING_SANDBOX_ROUTE') === 'true' ? '' : setting(env, 'WHOP_API_KEY')) : setting(env, 'WHOP_API_KEY');
+  const sandbox = !forceProduction && configuration(env).environment === 'sandbox';
+  const token = forceProduction
+    ? setting(env, 'WHOP_API_KEY')  // production key if available; empty → keyless proxy
+    : sandbox ? setting(env, 'WHOP_SANDBOX_API_KEY') || (setting(env, 'ROOFING_SANDBOX_ROUTE') === 'true' ? '' : setting(env, 'WHOP_API_KEY')) : setting(env, 'WHOP_API_KEY');
   // Explicit credentials are sent only to fixed Whop hosts. The reserved hosted
   // binding is trusted only for the keyless platform proxy, never browser input.
   const origin = sandbox ? 'https://sandbox-api.whop.com' : token ? 'https://api.whop.com' : setting(env, 'WHOP_API_ORIGIN') || 'https://api.whop.com';
