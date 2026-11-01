@@ -41,15 +41,15 @@ function PaymentFlow({order,config}:{order:any;config:any}){
   <ExpressCheckoutElement layout="horizontal" wallets={['apple_pay','google_pay']}/>
  </Checkout><p className="checkout-note" style={{marginTop:16}}>Your device's supported wallets appear above. If none are available, close this checkout and choose card payment.</p></>}
  {method==='standard'&&<><div className="checkout-divider">SECURE PAYMENT DETAILS</div>
- <Payments {...(order.mode==='setup'?{accountId:config.accountId,mode:'setup' as const,currency:'usd',paymentMethodConfiguration:{enabled:[],disabled:['paypal'],include_platform_defaults:true}}:{accountId:config.accountId,plan:order.planId})} returnUrl={returnUrl}>
+ <Payments accountId={config.accountId} plan={order.planId} returnUrl={returnUrl}>
   <PaymentFields mode={order.mode} amount={order.amount} onCreated={afterCreate} busy={busy} setBusy={setBusy} onError={setError}/>
  </Payments></>}
  </div>{error&&<p className="error" role="alert" style={{marginTop:15}}>{error}</p>}<p className="checkout-note" style={{marginTop:18}}><LockKeyhole size={12} style={{verticalAlign:'middle'}}/> Payment details stay inside Whop's secure hosted fields. Wallet availability depends on your device and merchant configuration.</p></>;
 }
 function PaymentFields({mode,amount,onCreated,busy,setBusy,onError}:{mode:string;amount:number;onCreated:(v:any)=>Promise<void>;busy:boolean;setBusy:(v:boolean)=>void;onError:(v:string)=>void}){
  const payments=usePayments();const [ready,setReady]=useState(false);
- async function pay(){if(!payments||busy)return;setBusy(true);onError('');try{const {confirmationToken}=await payments.createConfirmationToken({});await onCreated(await api('checkout/create',{confirmationToken}));}catch(e){onError((e as Error).message||'Payment could not be completed.')}finally{setBusy(false)}}
- return <div className="checkout-fields"><EmailElement/><PaymentElement onChange={e=>setReady(e.complete)}/><BrandingElement/><button className="button dark" disabled={!ready||busy} onClick={pay}>{busy?'Confirming securely…':mode==='setup'?`Save method & pay $${amount} deposit`:`Pay $${amount}`}<ArrowRight size={17}/></button></div>;
+ async function pay(){if(!payments||busy)return;setBusy(true);onError('');try{const {confirmationToken}=await payments.createConfirmationToken({});await onCreated(await api('checkout/create',{confirmationToken}));}catch(e){onError((e as Error).message||'Payment could not be completed. Please ensure all card details and address fields are filled.');}finally{setBusy(false)}}
+ return <div className="checkout-fields"><EmailElement/><PaymentElement onChange={e=>setReady(e.complete)}/><BrandingElement/><button className="button dark" disabled={busy} onClick={pay}>{busy?'Confirming securely…':mode==='setup'?`Save method & pay $${amount} deposit`:`Pay $${amount}`}<ArrowRight size={17}/></button></div>;
 }
 export function CheckoutReturn(){const [config,setConfig]=useState<any>(null);const [error,setError]=useState('');useEffect(()=>{api('config').then(setConfig).catch(e=>setError(e.message));},[]);if(!config)return <div className="return-page"><p role="status">{error||'Checking your payment environment…'}</p><a href="/">Back to the website</a></div>;return <WhopElements elements={elements} environment={config.environment}><ReturnState depositAmount={config.prices.deposit}/></WhopElements>}
 function ReturnState({depositAmount}:{depositAmount:number}){const whop=useWhop();const [state,setState]=useState<any>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [loaded,setLoaded]=useState(false);
