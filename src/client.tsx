@@ -11,36 +11,92 @@ document.title = `${company.name} Roofing | A stronger roof. A clearer process.`
 
 function Logo(){return <a href="/" className="logo" aria-label={`${company.name} home`}><span className="logo-mark"><Home size={26} strokeWidth={1.6}/></span><span>{company.name}<small>{company.descriptor}</small></span></a>}
 function EstimateForm(){
-  const [state,setState]=useState<'idle'|'loading'|'success'|'error'>('idle');const [message,setMessage]=useState('');const [lead,setLead]=useState('');const [identity,setIdentity]=useState<any>(null);const form=useRef<HTMLFormElement>(null);const id=useRef(crypto.randomUUID());
+  const [state,setState]=useState<'idle'|'loading'|'success'|'error'>('idle');const [message,setMessage]=useState('');const [lead,setLead]=useState('');const [identity,setIdentity]=useState<any>(null);const [showPopup,setShowPopup]=useState(false);const form=useRef<HTMLFormElement>(null);const id=useRef(crypto.randomUUID());
   useEffect(()=>{
-    api('auth/whop').then(setIdentity).catch(()=>setIdentity({authenticated:false}));
-    try{
-      const isOAuth = window.location.search.includes('whop_login=');
-      const draft=JSON.parse(sessionStorage.getItem('roofing:estimate-draft')||'null');
-      if(draft && isOAuth){
-        id.current=draft.requestId||id.current;
-        for(const[k,v]of Object.entries(draft.fields)){
-          const el=form.current?.elements.namedItem(k) as HTMLInputElement|null;
-          if(el){if(el.type==='checkbox')el.checked=v==='on';else el.value=String(v);}
+    api('auth/whop').then(async (ident)=>{
+      setIdentity(ident);
+      try{
+        const isOAuth = window.location.search.includes('whop_login=');
+        const isSuccess = window.location.search.includes('whop_login=success');
+        const draft=JSON.parse(sessionStorage.getItem('roofing:estimate-draft')||'null');
+        if(draft && isSuccess && ident?.authenticated){
+          id.current=draft.requestId||id.current;
+          for(const[k,v]of Object.entries(draft.fields)){
+            const el=form.current?.elements.namedItem(k) as HTMLInputElement|null;
+            if(el){if(el.type==='checkbox')el.checked=v==='on';else el.value=String(v);}
+          }
+          setState('loading');
+          const d = draft.fields as Record<string, any>;
+          const r = await api('leads', { ...d, consent: d.consent === 'on', requestId: id.current });
+          setLead(r.id);
+          track('estimate_requested', { service: d.service }, r.id);
+          setState('success');
+          setShowPopup(true);
+          sessionStorage.removeItem('roofing:estimate-draft');
+          try { window.history.replaceState({}, document.title, window.location.pathname + '#estimate'); } catch {}
+        } else if(draft && isOAuth){
+          id.current=draft.requestId||id.current;
+          for(const[k,v]of Object.entries(draft.fields)){
+            const el=form.current?.elements.namedItem(k) as HTMLInputElement|null;
+            if(el){if(el.type==='checkbox')el.checked=v==='on';else el.value=String(v);}
+          }
+          sessionStorage.removeItem('roofing:estimate-draft');
+        } else if(!isOAuth){
+          form.current?.reset();
         }
-      } else {
-        form.current?.reset();
+      }catch(err: any){
+        setMessage((err as Error).message || 'We could not submit your request.');
+        setState('error');
       }
-      sessionStorage.removeItem('roofing:estimate-draft');
-    }catch{}
+    }).catch(()=>setIdentity({authenticated:false}));
   },[]);
   function resetForm(){
     id.current=crypto.randomUUID();
     try{sessionStorage.removeItem('roofing:estimate-draft');}catch{}
     form.current?.reset();
     setState('idle');
+    setShowPopup(false);
   }
   async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const f=e.currentTarget;const d=Object.fromEntries(new FormData(f));setState('loading');
     if(!identity?.authenticated){try{sessionStorage.setItem('roofing:estimate-draft',JSON.stringify({requestId:id.current,fields:d}));}catch{}window.location.assign('/api/auth/whop/start');return;}
-    try{const r=await api('leads',{...d,consent:d.consent==='on',requestId:id.current});setLead(r.id);track('estimate_requested',{service:d.service},r.id);setState('success');try{sessionStorage.removeItem('roofing:estimate-draft');}catch{}f.reset();}
+    try{const r=await api('leads',{...d,consent:d.consent==='on',requestId:id.current});setLead(r.id);track('estimate_requested',{service:d.service},r.id);setState('success');setShowPopup(true);try{sessionStorage.removeItem('roofing:estimate-draft');}catch{}f.reset();}
     catch(err){setMessage((err as Error).message);setState('error');}}
-  if(state==='success')return <div className="form-success" role="status"><CheckCircle2 size={44}/><h3>Your request is on the list.</h3><p>Our team will review your roof details and contact you during business hours to discuss next steps.</p><small>Whop lead reference: {lead}</small><button className="button dark" onClick={resetForm}>Send another request <ArrowRight size={16}/></button></div>;
-  return <form ref={form} onSubmit={submit} className="estimate-form" autoComplete="off">
+  const successModal = showPopup && (
+    <div className="dialog-backdrop" onClick={()=>setShowPopup(false)} role="dialog" aria-modal="true" style={{zIndex:100}}>
+      <div className="checkout-dialog" onClick={e=>e.stopPropagation()} style={{textAlign:'center',maxWidth:460}}>
+        <button className="dialog-close" onClick={()=>setShowPopup(false)} aria-label="Close confirmation"><X size={17}/></button>
+        <div style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:62,height:62,borderRadius:'50%',background:'#e8f8ec',color:'#16a34a',margin:'0 auto 16px'}}>
+          <CheckCircle2 size={36}/>
+        </div>
+        <div className="eyebrow" style={{justifyContent:'center',marginBottom:10}}>
+          <span className="status-dot"/>ESTIMATE REQUEST SUBMITTED
+        </div>
+        <h2 style={{fontSize:24,marginBottom:10,letterSpacing:'-0.5px'}}>Request Received!</h2>
+        <p style={{fontSize:13,lineHeight:1.6,marginBottom:18}}>
+          Thank you! Your estimate request has been securely registered in Whop. Our roofing team has received your property details and will reach out to you by phone or email shortly.
+        </p>
+        <div style={{background:'#f4f7f2',border:'1px solid #dce5d5',borderRadius:6,padding:'12px 16px',marginBottom:22,fontSize:12,textAlign:'left'}}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+            <span style={{color:'var(--muted)'}}>Status:</span>
+            <strong style={{color:'#16a34a'}}>Confirmed & Logged</strong>
+          </div>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+            <span style={{color:'var(--muted)'}}>Whop Lead ID:</span>
+            <code style={{fontFamily:'monospace',fontWeight:600}}>{lead}</code>
+          </div>
+          <div style={{display:'flex',justifyContent:'space-between'}}>
+            <span style={{color:'var(--muted)'}}>Email Confirmation:</span>
+            <span>Recorded to Whop Lead Record</span>
+          </div>
+        </div>
+        <button className="button dark" style={{width:'100%'}} onClick={()=>setShowPopup(false)}>
+          Got it / Close
+        </button>
+      </div>
+    </div>
+  );
+  if(state==='success')return <>{successModal}<div className="form-success" role="status"><CheckCircle2 size={44}/><h3>Your request is on the list.</h3><p>Our team will review your roof details and contact you during business hours to discuss next steps.</p><small>Whop lead reference: {lead}</small><button className="button dark" onClick={resetForm}>Send another request <ArrowRight size={16}/></button></div></>;
+  return <>{successModal}<form ref={form} onSubmit={submit} className="estimate-form" autoComplete="off">
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'1rem'}}>
       <p className="checkout-note" style={{margin:0}}>{identity?.authenticated?`Connected with Whop${identity.user?.name?` as ${identity.user.name}`:''}. Your request goes directly to our team.`:'Use your Whop account to securely connect your estimate request. Your entered details are kept while you sign in.'}</p>
       <button type="button" className="text-link" style={{fontSize:'0.82rem',whiteSpace:'nowrap',marginTop:'0.2rem'}} onClick={resetForm}>Clear form</button>
@@ -54,7 +110,7 @@ function EstimateForm(){
     <label className="consent"><input type="checkbox" name="consent" required/><span>I agree to be contacted about this request by phone or email. No marketing subscription. <a href="/privacy">Privacy policy</a></span></label>
     {state==='error'&&<p className="error" role="alert">{message}</p>}
     <button className="button dark" disabled={state==='loading'||!identity}>{state==='loading'?'Sending your request…':identity?.authenticated?'Request my estimate':'Sign in & request estimate'}<ArrowUpRight size={18}/></button><p className="form-note">No payment required. A paid inspection is booked separately.</p>
-  </form>;
+  </form></>;
 }
 function App(){
   const [menu,setMenu]=useState(false);const [checkout,setCheckout]=useState<ServiceId|null>(null);const [config,setConfig]=useState<any>(null);const [faq,setFaq]=useState<number|null>(0);

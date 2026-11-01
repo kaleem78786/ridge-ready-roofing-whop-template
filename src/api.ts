@@ -153,8 +153,9 @@ api.get('/api/auth/whop/start', async c => {
   await cookie(c, 'roof_oauth', { verifier, state, nonce, redirectUri, exp: Date.now() + 600000 }, 600, 'Lax');
   const challenge = base64(new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(verifier))));
   const params = new URLSearchParams({ response_type: 'code', client_id: appId, redirect_uri: redirectUri, scope: 'openid profile email', state, nonce, code_challenge: challenge, code_challenge_method: 'S256' });
-  const origin = configuration(c.env).environment === 'sandbox' ? 'https://sandbox-api.whop.com' : 'https://api.whop.com';
-  return c.redirect(`${origin}/oauth/authorize?${params}`, 302);
+  const origin = setting(c.env, 'WHOP_OAUTH_ORIGIN') || (configuration(c.env).environment === 'sandbox' ? 'https://sandbox-api.whop.com' : 'https://api.whop.com');
+  const authHost = setting(c.env, 'WHOP_OAUTH_AUTHORIZE_HOST') || origin;
+  return c.redirect(`${authHost}/oauth/authorize?${params}`, 302);
 });
 api.get('/api/auth/whop/callback', async c => {
   rate(c, 'oauth', 10);
@@ -168,7 +169,7 @@ api.get('/api/auth/whop/callback', async c => {
   }
   const code = z.string().min(1).max(3000).parse(c.req.query('code'));
   const appId = setting(c.env, 'APP_ID') || setting(c.env, 'WHOP_APP_ID');
-  const origin = configuration(c.env).environment === 'sandbox' ? 'https://sandbox-api.whop.com' : 'https://api.whop.com';
+  const origin = setting(c.env, 'WHOP_OAUTH_ORIGIN') || (configuration(c.env).environment === 'sandbox' ? 'https://sandbox-api.whop.com' : 'https://api.whop.com');
   const tokenResponse = await fetch(`${origin}/oauth/token`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'x-whop-inject-key': 'none' },
     body: JSON.stringify({ grant_type: 'authorization_code', client_id: appId, code, code_verifier: saved.verifier, redirect_uri: saved.redirectUri }),
